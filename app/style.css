@@ -1,0 +1,64 @@
+/* Vice Cover Studio — dark navy editor with neon pink / cyan accents. */
+@font-face {
+  font-family: 'Anton';
+  src: url('./fonts/anton.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Bebas Neue';
+  src: url('./fonts/bebas-neue.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Archivo Black';
+  src: url('./fonts/archivo-black.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+
+html, body { margin: 0; min-height: 100%; background: #0d1226; color: #eef1ff; font: 15px/1.45 system-ui, -apple-system, sans-serif; }
+.app { display: flex; gap: 24px; align-items: flex-start; padding: 24px; box-sizing: border-box; min-height: 100vh; }
+.stage { flex: 1 1 auto; min-width: 0; position: sticky; top: 24px; }
+.stage canvas { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; background: #1a1030; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55); }
+.hint { margin: 10px 0 0; color: #9aa3c7; font-size: 13px; }
+
+.controls { flex: 0 0 340px; display: flex; flex-direction: column; gap: 18px; background: #141a33; border: 1px solid #2a3358; border-radius: 12px; padding: 20px; box-sizing: border-box; }
+.controls h1 { margin: 0; font-family: 'Anton', sans-serif; font-size: 30px; letter-spacing: 1px; color: #ff5da2; text-transform: uppercase; }
+.lede { margin: 0; color: #b9c0dd; }
+.group { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid #2a3358; padding-top: 14px; }
+.group h2 { margin: 0; font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: #7ef0ff; }
+label { display: flex; flex-direction: column; gap: 6px; font-weight: 600; font-size: 13px; }
+input[type=text], select { font: inherit; color: #eef1ff; background: #0d1226; border: 1px solid #3a4470; border-radius: 6px; padding: 8px; box-sizing: border-box; }
+input[type=range] { accent-color: #ff5da2; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font: inherit; font-weight: 700; padding: 8px 12px; border: 1px solid #3a4470; border-radius: 999px; background: #0d1226; color: #dfe4ff; cursor: pointer; }
+.chip:hover { border-color: #7ef0ff; }
+.chip.on { background: #ff5da2; border-color: #ff5da2; color: #fff; }
+.thumbs { display: flex; gap: 8px; }
+.thumb { flex: 1 1 0; min-width: 0; padding: 0; border: 2px solid transparent; border-radius: 8px; overflow: hidden; background: #0d1226; cursor: pointer; }
+.thumb img { display: block; width: 100%; height: 56px; object-fit: cover; }
+.thumb span { display: block; padding: 4px 2px; font-size: 11px; color: #b9c0dd; }
+.thumb.on { border-color: #7ef0ff; }
+.swatches { display: flex; gap: 8px; }
+.swatch { width: 32px; height: 32px; padding: 0; border: 2px solid transparent; border-radius: 50%; cursor: pointer; }
+.swatch.on { border-color: #fff; box-shadow: 0 0 0 2px #ff5da2; }
+.row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.row label { flex: 1 1 auto; }
+.slider, .zoom { flex-direction: row; align-items: center; gap: 8px; }
+.slider input, .zoom input { flex: 1 1 auto; min-width: 80px; }
+.check { flex-direction: row; align-items: center; gap: 6px; }
+.file { flex-direction: row; align-items: center; gap: 8px; cursor: pointer; }
+.file input { max-width: 170px; }
+button { font: inherit; font-weight: 700; padding: 10px 14px; border: 0; border-radius: 8px; background: #ff5da2; color: #fff; cursor: pointer; }
+button:hover { filter: brightness(1.1); }
+#export { background: #00c8e0; }
+#status { margin: 0; color: #8fe3a8; min-height: 1.2em; }
+
+/* Screenshot scenes: the cover alone fills the viewport; the editor stays. */
+body.shot-cover { overflow: hidden; }
+body.shot-cover .controls, body.shot-cover .hint { display: none; }
+body.shot-cover .app { padding: 0; gap: 0; }
+body.shot-cover .stage { position: static; width: 100vw; height: 100vh; }
+body.shot-cover canvas { width: 100vw; height: 100vh; aspect-ratio: auto; object-fit: contain; box-shadow: none; background: #fff; }
