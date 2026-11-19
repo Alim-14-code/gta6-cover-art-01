@@ -1,3 +1,9 @@
+[![gta6-cover-art-01](https://make.fun/badge/gta6-cover-art-01.svg)](https://make.fun/bounty/gta6-cover-art-01)
+[![rank](https://make.fun/badge/gta6-cover-art-01/Alim-14-code/gta6-cover-art-01/rank.svg)](https://make.fun/bounty/gta6-cover-art-01)
+[![reward](https://make.fun/badge/gta6-cover-art-01/Alim-14-code/gta6-cover-art-01/reward.svg)](https://make.fun/bounty/gta6-cover-art-01)
+
+Entry for the [gta6-cover-art-01 bounty](https://make.fun/bounty/gta6-cover-art-01) on make.fun.
+
 # Vice Cover Studio
 
 An offline cover maker that turns a photo and a caption into a GTA-style
