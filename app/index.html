@@ -1,75 +1,123 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Vice Cover Studio — GTA 6 Cover Art Maker</title>
+<title>Vice Cover Studio: Neon Reign</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header>
+<header class="topbar">
   <div class="brand">
-    <h1>VICE COVER STUDIO</h1>
-    <p>Turn any photo into GTA 6-style cover art — offline, in your browser.</p>
+    <span class="brand-mark">VC</span>
+    <div>
+      <h1>VICE COVER STUDIO</h1>
+      <p class="tagline">Neon Reign &middot; GTA 6-style cover art maker</p>
+    </div>
   </div>
-  <div class="head-actions">
-    <button id="shuffle" type="button">Shuffle look</button>
+  <div class="top-actions">
+    <label class="upload-btn">Upload photo
+      <input type="file" id="upload" accept="image/*" multiple hidden>
+    </label>
   </div>
 </header>
-<main>
-  <section id="stage"><canvas id="cover" width="640" height="640"></canvas></section>
-  <aside id="controls">
-    <div class="group">
+
+<main class="studio">
+  <section class="stage-wrap">
+    <div class="stage">
+      <canvas id="cover" width="1080" height="1080"></canvas>
+    </div>
+    <div class="stage-bar">
+      <span id="stage-size">1080 &times; 1080</span>
+      <span class="hint">Photos stay on your machine &mdash; nothing is uploaded.</span>
+    </div>
+  </section>
+
+  <aside class="panel" id="controls">
+    <section class="group">
+      <h2>Photo</h2>
+      <div class="thumbs" id="photo-thumbs"></div>
+      <p class="note">Pick a scene, or upload your own. Each panel can use a different photo.</p>
+    </section>
+
+    <section class="group">
       <h2>Layout</h2>
-      <div id="layouts" class="chips"></div>
-    </div>
-    <div class="group">
-      <h2>Grade</h2>
-      <div id="grades" class="chips"></div>
-    </div>
-    <div class="group">
+      <div class="btn-grid" id="layout-btns"></div>
+    </section>
+
+    <section class="group">
+      <h2>Colour grade</h2>
+      <div class="swatches" id="grade-swatches"></div>
+    </section>
+
+    <section class="group">
       <h2>Title style</h2>
-      <div id="titles" class="chips"></div>
-      <label>Title <input id="title" type="text" maxlength="40" value="NEON REIGN"></label>
-      <label>Subtitle <input id="subtitle" type="text" maxlength="60" value="a Vice City story"></label>
-    </div>
-    <div class="group">
-      <h2>Panels</h2>
-      <div id="panels" class="chips"></div>
-      <p id="panelLabel" class="hint">Panel 1</p>
-      <label>Photo
-        <select id="photo">
-          <option value="pier">Pier sunset</option>
-          <option value="boulevard">Boulevard</option>
-          <option value="neon">Neon street</option>
-        </select>
+      <div class="btn-grid" id="title-btns"></div>
+      <label class="field">Title
+        <input type="text" id="in-title" value="Neon Reign" maxlength="24">
       </label>
-      <label>Your photo <input id="upload" type="file" accept="image/*"></label>
-      <label>Role tag <input id="tag" type="text" maxlength="10" value="LEAD"></label>
-      <label>Zoom <input id="zoom" type="range" min="1" max="2.5" step="0.05" value="1.15"></label>
-      <label>Pan X <input id="panx" type="range" min="-0.5" max="0.5" step="0.05" value="0"></label>
-      <label>Pan Y <input id="pany" type="range" min="-0.5" max="0.5" step="0.05" value="0"></label>
-      <button id="focus" type="button">Focus hero close-up</button>
-    </div>
-    <div class="group">
-      <h2>Finishing</h2>
-      <label class="check"><input id="seal" type="checkbox" checked> Seal stamp</label>
-      <label class="check"><input id="billing" type="checkbox" checked> Billing block</label>
-      <label class="check"><input id="grain" type="checkbox" checked> Film grain</label>
-      <label class="check"><input id="vignette" type="checkbox" checked> Vignette</label>
-    </div>
-    <div class="group">
+      <label class="field">Subtitle
+        <input type="text" id="in-subtitle" value="VICE CITY" maxlength="32">
+      </label>
+      <label class="field">Tagline
+        <input type="text" id="in-tagline" value="One last score under the neon sun." maxlength="64">
+      </label>
+    </section>
+
+    <section class="group">
+      <h2>Panels</h2>
+      <label class="field">Panel
+        <select id="panel-select"></select>
+      </label>
+      <label class="field">Panel photo
+        <select id="panel-photo"></select>
+      </label>
+      <label class="slider">Zoom <span id="zoom-val">1.00</span>
+        <input type="range" id="in-zoom" min="1" max="2.5" step="0.01" value="1">
+      </label>
+      <label class="slider">Pan X <span id="panx-val">0</span>
+        <input type="range" id="in-panx" min="-100" max="100" step="1" value="0">
+      </label>
+      <label class="slider">Pan Y <span id="pany-val">0</span>
+        <input type="range" id="in-pany" min="-100" max="100" step="1" value="0">
+      </label>
+      <label class="slider">Hero focus <span id="focus-val">50</span>
+        <input type="range" id="in-focus" min="0" max="100" step="1" value="50">
+      </label>
+    </section>
+
+    <section class="group">
+      <h2>Dressing</h2>
+      <label class="check"><input type="checkbox" id="tgl-callouts" checked> Callouts</label>
+      <label class="check"><input type="checkbox" id="tgl-seal" checked> Vice City seal</label>
+      <label class="check"><input type="checkbox" id="tgl-roles" checked> Role tags</label>
+      <label class="check"><input type="checkbox" id="tgl-billing" checked> Cast billing</label>
+      <label class="field">Callout text
+        <input type="text" id="in-callout" value="THE SCORE OF THE CENTURY" maxlength="48">
+      </label>
+      <label class="field">Role tag
+        <input type="text" id="in-role" value="THE DRIVER" maxlength="24">
+      </label>
+    </section>
+
+    <section class="group export">
       <h2>Export PNG</h2>
-      <div class="exports">
-        <button id="exp-square" type="button">Square 1080×1080</button>
-        <button id="exp-portrait" type="button">Portrait 1080×1350</button>
-        <button id="exp-wide" type="button">Wide 1920×1080</button>
+      <div class="btn-grid" id="size-btns">
+        <button type="button" data-size="1080x1080" class="size-btn active">1080 &times; 1080</button>
+        <button type="button" data-size="1080x1350" class="size-btn">1080 &times; 1350</button>
+        <button type="button" data-size="1920x1080" class="size-btn">1920 &times; 1080</button>
       </div>
-      <p id="status" class="hint">Pick a layout, a grade and a photo — export when it looks right.</p>
-    </div>
-    <p class="fine">Fan-made poster tool. No Rockstar Games artwork, logo or fonts. Sample photos are drawn in-browser; your uploads never leave this machine.</p>
+      <button type="button" id="export-btn" class="export-btn">Download PNG</button>
+      <p class="note">Exports the cover exactly as drawn &mdash; no watermark.</p>
+    </section>
   </aside>
 </main>
-<script type="module" src="src/main.js"></script>
+
+<footer class="foot">
+  <p>Vice Cover Studio is an original fan-made tool. Not affiliated with Rockstar Games. Fonts: Anton, Archivo Black, Bebas Neue (SIL Open Font License).</p>
+</footer>
+
+<script src="src/cover.js"></script>
+<script src="src/main.js"></script>
 </body>
 </html>
