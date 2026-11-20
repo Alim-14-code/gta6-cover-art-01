@@ -3,89 +3,73 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Vice Cover Studio — GTA-style cover art maker</title>
+<title>Vice Cover Studio — GTA 6 Cover Art Maker</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header class="topbar">
+<header>
   <div class="brand">
-    <span class="mark">VC</span>
-    <div>
-      <h1>VICE COVER STUDIO</h1>
-      <p>Turn your photos into GTA-style cover art</p>
-    </div>
+    <h1>VICE COVER STUDIO</h1>
+    <p>Turn any photo into GTA 6-style cover art — offline, in your browser.</p>
   </div>
-  <div class="exports">
-    <span>Export PNG</span>
-    <button type="button" data-export="square">1080 &times; 1080</button>
-    <button type="button" data-export="portrait">1080 &times; 1350</button>
-    <button type="button" data-export="wide">1920 &times; 1080</button>
+  <div class="head-actions">
+    <button id="shuffle" type="button">Shuffle look</button>
   </div>
 </header>
-
-<main class="workspace">
-  <aside class="sidebar">
-    <section>
-      <h2>01 · Layout</h2>
-      <div id="layoutPick" class="grid layouts"></div>
-    </section>
-    <section>
-      <h2>02 · Grade</h2>
-      <div id="gradePick" class="grid grades"></div>
-    </section>
-    <section>
-      <h2>03 · Title style</h2>
-      <div id="titlePick" class="grid titles"></div>
-    </section>
-    <section>
-      <h2>04 · Caption</h2>
-      <label>Title
-        <input id="titleInput" value="VICE CITY" maxlength="24" autocomplete="off">
+<main>
+  <section id="stage"><canvas id="cover" width="640" height="640"></canvas></section>
+  <aside id="controls">
+    <div class="group">
+      <h2>Layout</h2>
+      <div id="layouts" class="chips"></div>
+    </div>
+    <div class="group">
+      <h2>Grade</h2>
+      <div id="grades" class="chips"></div>
+    </div>
+    <div class="group">
+      <h2>Title style</h2>
+      <div id="titles" class="chips"></div>
+      <label>Title <input id="title" type="text" maxlength="40" value="NEON REIGN"></label>
+      <label>Subtitle <input id="subtitle" type="text" maxlength="60" value="a Vice City story"></label>
+    </div>
+    <div class="group">
+      <h2>Panels</h2>
+      <div id="panels" class="chips"></div>
+      <p id="panelLabel" class="hint">Panel 1</p>
+      <label>Photo
+        <select id="photo">
+          <option value="pier">Pier sunset</option>
+          <option value="boulevard">Boulevard</option>
+          <option value="neon">Neon street</option>
+        </select>
       </label>
-      <label>Subtitle
-        <input id="subtitleInput" value="LEONIDA" maxlength="24" autocomplete="off">
-      </label>
-      <label>Billing line
-        <input id="billingInput" value="Starring Lucia &amp; Jason" maxlength="48" autocomplete="off">
-      </label>
-    </section>
-    <section>
-      <h2>05 · Extras</h2>
-      <label class="check"><input type="checkbox" id="tglCallouts" checked> Callout chips</label>
-      <label class="check"><input type="checkbox" id="tglSeal" checked> VC seal badge</label>
-      <label class="check"><input type="checkbox" id="tglRoles" checked> Role tags on panels</label>
-      <label class="check"><input type="checkbox" id="tglBilling" checked> Billing line</label>
-    </section>
-    <section>
-      <h2>06 · Photo</h2>
-      <div id="samplePick" class="grid samples"></div>
-      <div class="row">
-        <button type="button" id="uploadBtn" class="wide">Upload a photo&hellip;</button>
-        <input type="file" id="fileInput" accept="image/*" hidden>
+      <label>Your photo <input id="upload" type="file" accept="image/*"></label>
+      <label>Role tag <input id="tag" type="text" maxlength="10" value="LEAD"></label>
+      <label>Zoom <input id="zoom" type="range" min="1" max="2.5" step="0.05" value="1.15"></label>
+      <label>Pan X <input id="panx" type="range" min="-0.5" max="0.5" step="0.05" value="0"></label>
+      <label>Pan Y <input id="pany" type="range" min="-0.5" max="0.5" step="0.05" value="0"></label>
+      <button id="focus" type="button">Focus hero close-up</button>
+    </div>
+    <div class="group">
+      <h2>Finishing</h2>
+      <label class="check"><input id="seal" type="checkbox" checked> Seal stamp</label>
+      <label class="check"><input id="billing" type="checkbox" checked> Billing block</label>
+      <label class="check"><input id="grain" type="checkbox" checked> Film grain</label>
+      <label class="check"><input id="vignette" type="checkbox" checked> Vignette</label>
+    </div>
+    <div class="group">
+      <h2>Export PNG</h2>
+      <div class="exports">
+        <button id="exp-square" type="button">Square 1080×1080</button>
+        <button id="exp-portrait" type="button">Portrait 1080×1350</button>
+        <button id="exp-wide" type="button">Wide 1920×1080</button>
       </div>
-      <button type="button" id="fillAllBtn" class="wide ghost">Fill all panels with this photo</button>
-      <label>Zoom
-        <input type="range" id="zoomRange" min="0" max="100" value="0">
-      </label>
-      <button type="button" id="resetViewBtn" class="wide ghost">Reset view</button>
-    </section>
+      <p id="status" class="hint">Pick a layout, a grade and a photo — export when it looks right.</p>
+    </div>
+    <p class="fine">Fan-made poster tool. No Rockstar Games artwork, logo or fonts. Sample photos are drawn in-browser; your uploads never leave this machine.</p>
   </aside>
-
-  <section class="stage">
-    <div class="canvas-wrap">
-      <canvas id="preview" width="540" height="675"></canvas>
-    </div>
-    <div class="stage-bar">
-      <div id="sizePick" class="sizes"></div>
-      <div id="panelChips" class="chips"></div>
-      <p class="hint">Click a panel to select it &middot; drag to pan &middot; scroll to zoom &middot; double-click to set its focus</p>
-    </div>
-  </section>
 </main>
-
-<footer class="foot">Runs fully offline &mdash; your photos never leave your machine &middot; Built for make.fun&rsquo;s &ldquo;Make GTA 6 Cover Art&rdquo; bounty</footer>
-<div id="toast" role="status"></div>
-<script src="src/cover.js"></script>
-<script src="src/main.js"></script>
+<script type="module" src="src/main.js"></script>
 </body>
 </html>
