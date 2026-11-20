@@ -3,77 +3,76 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Vice Cover Studio — GTA-style cover maker</title>
-<link rel="stylesheet" href="./style.css">
+<title>Vice Cover Studio — GTA-style cover art maker</title>
+<meta name="description" content="Turn your photos into a GTA-style poster cover: slanted multi-panel layouts, colour grades, key-art lettering and PNG export. Fully offline.">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-<main class="app">
-  <section class="stage">
-    <canvas id="cover" width="1920" height="1080" aria-label="The cover preview"></canvas>
-    <p class="hint">Click a panel to select it, drag to pan, scroll to zoom.</p>
+<header class="topbar">
+  <div class="brand"><span class="logo">VC</span><div><h1>VICE COVER STUDIO</h1><p>Turn your photo into a GTA-style poster cover. Offline — your photos never leave this machine.</p></div></div>
+  <button id="exportBtn" class="export-btn" type="button">Export PNG</button>
+</header>
+
+<main class="workspace">
+  <section class="stage-wrap">
+    <div class="stage-frame"><canvas id="stage" width="1080" height="720"></canvas></div>
+    <p class="hint">Click a panel to select it, then drag its photo to position it, scroll to zoom, or double-click to set its focus point. Each panel takes its own photo, or one photo can fill them all.</p>
+    <div class="export-row">
+      <label for="exportSize">Export size</label>
+      <select id="exportSize">
+        <option value="1080x1080">1080 × 1080 — square (1:1)</option>
+        <option value="1080x1350">1080 × 1350 — portrait (4:5)</option>
+        <option value="1920x1080" selected>1920 × 1080 — wide (16:9)</option>
+      </select>
+      <button id="exportBtn2" class="export-btn" type="button">Export PNG</button>
+      <span id="exportStatus" class="export-status" role="status"></span>
+    </div>
   </section>
-  <aside class="controls">
-    <h1>Vice Cover Studio</h1>
-    <p class="lede">Turn a photo and a caption into a GTA-style poster cover. Everything runs offline.</p>
 
-    <section class="group">
-      <h2>Layout</h2>
-      <div id="layoutRow" class="chips" role="group" aria-label="Layout"></div>
+  <aside class="panel">
+    <section class="card">
+      <h2>1 · Layout</h2>
+      <div id="layoutPicker" class="chips"></div>
     </section>
 
-    <section class="group">
-      <h2>Panels</h2>
-      <div id="panelRow" class="thumbs" role="group" aria-label="Panels"></div>
-      <div class="row">
-        <label class="zoom">Zoom <input id="zoom" type="range" min="1" max="3" step="0.05" value="1"> <span id="zoomVal">100%</span></label>
+    <section class="card">
+      <h2>2 · Photos</h2>
+      <div id="panelCards"></div>
+      <div class="fill-row">
+        <select id="fillSelect" aria-label="Photo to fill all panels"></select>
+        <button id="fillAllBtn" type="button">Fill all panels</button>
       </div>
+      <label class="upload-row">Upload your own photo
+        <input id="uploadInput" type="file" accept="image/*" multiple>
+      </label>
     </section>
 
-    <section class="group">
-      <h2>Photos</h2>
-      <div id="sampleRow" class="thumbs" role="group" aria-label="Sample photos"></div>
-      <div class="row">
-        <label class="file">Upload your own <input id="upload" type="file" accept="image/*"></label>
-        <button id="fillAll" type="button">Fill all panels</button>
-      </div>
+    <section class="card">
+      <h2>3 · Colour grade</h2>
+      <div id="gradePicker" class="chips"></div>
     </section>
 
-    <section class="group">
-      <h2>Colour grade</h2>
-      <div id="gradeRow" class="chips" role="group" aria-label="Colour grade"></div>
+    <section class="card">
+      <h2>4 · Lettering</h2>
+      <label class="field">Title
+        <input id="titleInput" type="text" value="VICE NIGHTS" maxlength="24">
+      </label>
+      <label class="field">Tagline
+        <input id="taglineInput" type="text" value="Ocean Drive · 2026" maxlength="40">
+      </label>
+      <div id="stylePicker" class="chips"></div>
     </section>
 
-    <section class="group">
-      <h2>Caption</h2>
-      <label>Title <input id="caption" type="text" maxlength="40" value="VICE NIGHTS"></label>
-      <label>Tagline <input id="tagline" type="text" maxlength="40" value="OCEAN DRIVE • 2026"></label>
-      <div id="fontRow" class="chips" role="group" aria-label="Caption font"></div>
-      <div id="colorRow" class="swatches" role="group" aria-label="Caption colour"></div>
-      <div class="row">
-        <label class="slider">Size <input id="capSize" type="range" min="0" max="100" value="50"> <span id="capSizeVal">50%</span></label>
-        <label class="slider">Tilt <input id="capTilt" type="range" min="-10" max="10" value="-2"> <span id="capTiltVal">-2°</span></label>
-      </div>
-      <div class="row">
-        <label class="check"><input id="capOutline" type="checkbox" checked> Outline</label>
-        <label>Position
-          <select id="capPos">
-            <option value="bottom" selected>Bottom</option>
-            <option value="top">Top</option>
-          </select>
-        </label>
-      </div>
-    </section>
-
-    <section class="group export">
-      <h2>Export</h2>
-      <div class="row">
-        <label>Size <select id="size"></select></label>
-        <button id="export" type="button">Export PNG</button>
-      </div>
-      <p id="status" role="status"></p>
+    <section class="card">
+      <h2>5 · Key-art extras</h2>
+      <label class="check"><input id="exChips" type="checkbox" checked> Callout chips</label>
+      <label class="check"><input id="exSeal" type="checkbox" checked> Seal / badge</label>
+      <label class="check"><input id="exRoles" type="checkbox" checked> Role tags on panels</label>
+      <label class="check"><input id="exBilling" type="checkbox" checked> Billing block</label>
     </section>
   </aside>
 </main>
+
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>
