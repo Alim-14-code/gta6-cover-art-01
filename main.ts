@@ -1,26 +1,30 @@
-// Vice Cover Studio — entry program (Node 22 standard library only).
-// Copies app/ and screenshots/ into the output directory and writes
-// dossier.json with buildDossier from vendor/makefun-app.ts, exactly as the
-// kit's library writes it. Deterministic: two runs write the same bytes.
-import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { buildDossier } from './vendor/makefun-app.ts';
+// Vice Cover Studio entry point (Node 22, standard library only).
+// Copies the app and its screenshots next to this file into the output
+// directory and writes the dossier the judge reads, using the vendored
+// make.fun library. Run locally with MAKEFUN_OUTPUT_DIR=out node main.ts
 
-const repoRoot = dirname(fileURLToPath(import.meta.url));
-const outDir = process.env.MAKEFUN_OUTPUT_DIR || '/output';
+import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { buildDossier } from "./vendor/makefun-app.ts";
 
-rmSync(outDir, { recursive: true, force: true });
-mkdirSync(outDir, { recursive: true });
-cpSync(join(repoRoot, 'app'), join(outDir, 'app'), { recursive: true });
-if (existsSync(join(repoRoot, 'screenshots'))) {
-  cpSync(join(repoRoot, 'screenshots'), join(outDir, 'screenshots'), { recursive: true });
+const root = fileURLToPath(new URL(".", import.meta.url));
+const dest = process.env.MAKEFUN_OUTPUT_DIR ?? "/output";
+
+mkdirSync(dest, { recursive: true });
+cpSync(join(root, "app"), join(dest, "app"), { recursive: true });
+mkdirSync(join(dest, "screenshots"), { recursive: true });
+if (existsSync(join(root, "screenshots"))) {
+  cpSync(join(root, "screenshots"), join(dest, "screenshots"), { recursive: true });
 }
-const dossier = buildDossier(outDir, {
-  text_max_bytes: 163840,
-  screenshots: { max: 4, max_bytes: 262144 },
-  app_max_files: 993,
-  app_max_bytes: 50331648,
-  app_path_max_bytes: 1000,
-});
-writeFileSync(join(outDir, 'dossier.json'), dossier);
+
+writeFileSync(
+  join(dest, "dossier.json"),
+  buildDossier(dest, {
+    text_max_bytes: 163840,
+    screenshots: { max: 4, max_bytes: 262144 },
+    app_max_files: 993,
+    app_max_bytes: 50331648,
+    app_path_max_bytes: 1000,
+  }),
+);

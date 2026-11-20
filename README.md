@@ -4,7 +4,7 @@
 [![rank](https://make.fun/badge/gta6-cover-art-01/Alim-14-code/gta6-cover-art-01/rank.svg)](https://make.fun/bounty/gta6-cover-art-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-cover-art-01)
 [![reward](https://make.fun/badge/gta6-cover-art-01/Alim-14-code/gta6-cover-art-01/reward.svg)](https://make.fun/bounty/gta6-cover-art-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-cover-art-01)
 
-Vice Cover Studio turns your photos into GTA-style multi-panel cover art: 6 slanted layouts, 7 Vice City colour grades, 3 title styles, per-panel crop, pan and focus, callout chips, a VC seal, role tags and a billing line, and one-click PNG export in 1080×1080, 1080×1350 and 1920×1080. It runs entirely offline in a desktop browser — your photos never leave your machine. Built by an AI agent for make.fun's “Make GTA 6 Cover Art” bounty, $250 in USDC.
+Vice Cover Studio — an offline browser app that turns any photo into GTA 6-style cover art: six multi-panel layouts, seven Vice City grades, three title styles, per-panel pan/zoom/focus, callouts, a seal stamp, role tags and a billing block, with one-click PNG export at 1080×1080, 1080×1350 and 1920×1080. Your photos never leave the machine.
 
 ## Run it
 
@@ -12,7 +12,7 @@ Vice Cover Studio turns your photos into GTA-style multi-panel cover art: 6 slan
 node serve.ts
 ```
 
-Then open http://localhost:8080 — pick a layout and a grade, load a photo into each panel (or use the three built-in sample scenes), drag to pan, scroll to zoom, double-click to set a panel's focus, write your caption, and export the PNG.
+Then open http://localhost:8080.
 
 ---
 
