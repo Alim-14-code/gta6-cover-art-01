@@ -1,285 +1,286 @@
-// Vice Cover Studio — UI wiring: controls, photo loading, export, shot modes.
-// Runs entirely in the browser; photos are read on the user's machine.
+/* Vice Cover Studio — app wiring: state, controls, photos, export. */
 (function () {
-  'use strict';
+  "use strict";
 
-  var SAMPLES = [
-    { name: 'Boulevard', src: 'samples/boulevard.jpg' },
-    { name: 'Neon', src: 'samples/neon.jpg' },
-    { name: 'Pier', src: 'samples/pier.jpg' },
-  ];
+  var SAMPLES = {
+    boulevard: "samples/boulevard.jpg",
+    neon: "samples/neon.jpg",
+    pier: "samples/pier.jpg"
+  };
+  var SAMPLE_LABELS = { boulevard: "Boulevard", neon: "Neon", pier: "Pier" };
 
-  var canvas = document.getElementById('cover');
-  var params = new URLSearchParams(location.search);
-  var shot = params.get('shot') || '';
-  var state = null;
-  var photosLoaded = 0;
-  var activePanel = 0;
-  var exportSize = { w: 1080, h: 1080 };
+  var state = window.ViceCover.defaultState();
+  var photos = {};          /* key -> loaded Image */
+  var uploaded = {};        /* key -> uploaded Image (user files) */
+  var uploadCount = 0;
+  var selectedPanel = 0;
+  var raf = 0;
 
   function $(id) { return document.getElementById(id); }
 
-  function loadPhoto(entry) {
-    return new Promise(function (resolve) {
+  function loadImage(src) {
+    return new Promise(function (resolve, reject) {
       var img = new Image();
-      img.onload = function () {
-        photosLoaded++;
-        resolve({ name: entry.name, src: entry.src, img: img });
-      };
-      img.onerror = function () {
-        photosLoaded++;
-        resolve({ name: entry.name, src: entry.src, img: null });
-      };
-      img.src = entry.src;
+      img.onload = function () { resolve(img); };
+      img.onerror = function () { reject(new Error("cannot load " + src)); };
+      img.src = src;
     });
   }
 
-  function render() {
-    if (!state) return;
-    var w = canvas.width;
-    var h = canvas.height;
-    ViceCover.renderCover(canvas, state, w, h);
-    $('stage-size').textContent = w + ' × ' + h;
+  function scheduleDraw() {
+    if (raf) return;
+    raf = requestAnimationFrame(function () {
+      raf = 0;
+      draw();
+    });
   }
 
-  function syncPanelControls() {
-    var t = state.panels[activePanel];
-    $('in-zoom').value = t.zoom;
-    $('in-panx').value = t.panX;
-    $('in-pany').value = t.panY;
-    $('in-focus').value = t.focus;
-    $('zoom-val').textContent = Number(t.zoom).toFixed(2);
-    $('panx-val').textContent = t.panX;
-    $('pany-val').textContent = t.panY;
-    $('focus-val').textContent = t.focus;
-    $('panel-photo').value = String(t.photo);
-    $('panel-select').value = String(activePanel);
+  function draw() {
+    var canvas = $("cover");
+    if (!canvas) return;
+    window.ViceCover.renderCover(canvas, state, photos);
+    var size = canvas.width + " \u00d7 " + canvas.height;
+    var label = $("sizeLabel");
+    if (label) label.textContent = "Preview " + size + " \u00b7 drag the sliders to frame each panel";
   }
 
-  function rebuildPanelSelect() {
-    var layout = ViceCover.layoutById(state.layout);
-    var sel = $('panel-select');
-    sel.innerHTML = '';
-    layout.panels.forEach(function (_p, i) {
-      var o = document.createElement('option');
-      o.value = String(i);
-      o.textContent = 'Panel ' + (i + 1) + (i === 0 ? ' (hero)' : '');
-      sel.appendChild(o);
+  function setActive(rowId, attr, value) {
+    var row = $(rowId);
+    if (!row) return;
+    Array.prototype.forEach.call(row.querySelectorAll("[data-" + attr + "]"), function (btn) {
+      btn.classList.toggle("active", btn.getAttribute("data-" + attr) === value);
     });
-    if (activePanel >= layout.panels.length) activePanel = 0;
-    var photoSel = $('panel-photo');
-    photoSel.innerHTML = '';
-    state.photos.forEach(function (p, i) {
-      var o = document.createElement('option');
-      o.value = String(i);
-      o.textContent = p.name;
-      photoSel.appendChild(o);
-    });
-    syncPanelControls();
   }
 
-  function buildControls() {
-    // Photo thumbs.
-    var thumbs = $('photo-thumbs');
-    thumbs.innerHTML = '';
-    state.photos.forEach(function (p, i) {
-      var img = document.createElement('img');
-      img.src = p.src;
-      img.alt = p.name;
-      img.title = p.name;
-      img.className = i === 0 ? 'active' : '';
-      img.addEventListener('click', function () {
-        state.panels[activePanel].photo = i;
-        thumbs.querySelectorAll('img').forEach(function (t, j) {
-          t.classList.toggle('active', j === i);
-        });
-        syncPanelControls();
-        render();
-      });
-      thumbs.appendChild(img);
+  function refreshPanelControls() {
+    var layout = window.ViceCover.LAYOUTS[state.layout];
+    var sel = $("panelSelect");
+    var current = sel.value;
+    sel.innerHTML = "";
+    layout.panels.forEach(function (_frac, i) {
+      var opt = document.createElement("option");
+      opt.value = String(i);
+      opt.textContent = "Panel " + (i + 1);
+      sel.appendChild(opt);
     });
-
-    // Layout buttons.
-    var lb = $('layout-btns');
-    lb.innerHTML = '';
-    ViceCover.LAYOUTS.forEach(function (l) {
-      var b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = l.name;
-      b.className = l.id === state.layout ? 'active' : '';
-      b.addEventListener('click', function () {
-        state.layout = l.id;
-        lb.querySelectorAll('button').forEach(function (x) {
-          x.classList.toggle('active', x === b);
-        });
-        rebuildPanelSelect();
-        render();
-      });
-      lb.appendChild(b);
-    });
-
-    // Grade swatches.
-    var gs = $('grade-swatches');
-    gs.innerHTML = '';
-    ViceCover.GRADES.forEach(function (g) {
-      var b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'swatch' + (g.id === state.grade ? ' active' : '');
-      b.title = g.name;
-      b.style.background = 'linear-gradient(135deg,' + g.wash[0] + ',' + g.wash[1] + ',' + g.wash[2] + ')';
-      b.addEventListener('click', function () {
-        state.grade = g.id;
-        gs.querySelectorAll('.swatch').forEach(function (x) {
-          x.classList.toggle('active', x === b);
-        });
-        render();
-      });
-      gs.appendChild(b);
-    });
-
-    // Title styles.
-    var tb = $('title-btns');
-    tb.innerHTML = '';
-    ViceCover.TITLE_STYLES.forEach(function (t) {
-      var b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = t.name;
-      b.className = t.id === state.titleStyle ? 'active' : '';
-      b.addEventListener('click', function () {
-        state.titleStyle = t.id;
-        tb.querySelectorAll('button').forEach(function (x) {
-          x.classList.toggle('active', x === b);
-        });
-        render();
-      });
-      tb.appendChild(b);
-    });
-
-    rebuildPanelSelect();
+    if (Number(current) < layout.panels.length) sel.value = current;
+    selectedPanel = Number(sel.value || 0);
+    var setting = state.panels[selectedPanel];
+    $("panX").value = String(setting.panX);
+    $("panY").value = String(setting.panY);
+    $("zoom").value = String(Math.round(setting.zoom * 100));
+    refreshPhotoSelect();
   }
 
-  function bindInputs() {
-    $('in-title').addEventListener('input', function (e) { state.title = e.target.value; render(); });
-    $('in-subtitle').addEventListener('input', function (e) { state.subtitle = e.target.value; render(); });
-    $('in-tagline').addEventListener('input', function (e) { state.tagline = e.target.value; render(); });
-    $('in-callout').addEventListener('input', function (e) { state.callout = e.target.value; render(); });
-    $('in-role').addEventListener('input', function (e) { state.role = e.target.value; render(); });
-    $('tgl-callouts').addEventListener('change', function (e) { state.showCallouts = e.target.checked; render(); });
-    $('tgl-seal').addEventListener('change', function (e) { state.showSeal = e.target.checked; render(); });
-    $('tgl-roles').addEventListener('change', function (e) { state.showRoles = e.target.checked; render(); });
-    $('tgl-billing').addEventListener('change', function (e) { state.showBilling = e.target.checked; render(); });
-    $('panel-select').addEventListener('change', function (e) { activePanel = Number(e.target.value); syncPanelControls(); render(); });
-    $('panel-photo').addEventListener('change', function (e) {
-      state.panels[activePanel].photo = Number(e.target.value);
-      render();
+  function refreshPhotoSelect() {
+    var sel = $("panelPhoto");
+    var setting = state.panels[selectedPanel];
+    sel.innerHTML = "";
+    Object.keys(SAMPLES).forEach(function (key) {
+      var opt = document.createElement("option");
+      opt.value = key;
+      opt.textContent = SAMPLE_LABELS[key];
+      sel.appendChild(opt);
     });
-    $('in-zoom').addEventListener('input', function (e) {
-      state.panels[activePanel].zoom = Number(e.target.value);
-      $('zoom-val').textContent = Number(e.target.value).toFixed(2);
-      render();
+    Object.keys(uploaded).forEach(function (key) {
+      var opt = document.createElement("option");
+      opt.value = key;
+      opt.textContent = "Uploaded " + key.slice(3);
+      sel.appendChild(opt);
     });
-    $('in-panx').addEventListener('input', function (e) {
-      state.panels[activePanel].panX = Number(e.target.value);
-      $('panx-val').textContent = e.target.value;
-      render();
+    sel.value = setting.photo;
+  }
+
+  function bindChips(rowId, attr, apply) {
+    var row = $(rowId);
+    row.addEventListener("click", function (ev) {
+      var btn = ev.target.closest("[data-" + attr + "]");
+      if (!btn) return;
+      apply(btn.getAttribute("data-" + attr));
+      setActive(rowId, attr, btn.getAttribute("data-" + attr));
+      scheduleDraw();
     });
-    $('in-pany').addEventListener('input', function (e) {
-      state.panels[activePanel].panY = Number(e.target.value);
-      $('pany-val').textContent = e.target.value;
-      render();
+  }
+
+  function bind() {
+    bindChips("photoRow", "photo", function (key) {
+      state.panels[selectedPanel].photo = key;
+      refreshPhotoSelect();
     });
-    $('in-focus').addEventListener('input', function (e) {
-      state.panels[activePanel].focus = Number(e.target.value);
-      $('focus-val').textContent = e.target.value;
-      render();
+    bindChips("layoutRow", "layout", function (key) {
+      state.layout = key;
+      refreshPanelControls();
+    });
+    bindChips("gradeRow", "grade", function (key) { state.grade = key; });
+    bindChips("titleRow", "tstyle", function (key) { state.titleStyle = key; });
+
+    $("titleInput").addEventListener("input", function (ev) {
+      state.title = ev.target.value;
+      scheduleDraw();
+    });
+    $("subtitleInput").addEventListener("input", function (ev) {
+      state.subtitle = ev.target.value;
+      scheduleDraw();
+    });
+    $("panelSelect").addEventListener("change", function (ev) {
+      selectedPanel = Number(ev.target.value);
+      var setting = state.panels[selectedPanel];
+      $("panX").value = String(setting.panX);
+      $("panY").value = String(setting.panY);
+      $("zoom").value = String(Math.round(setting.zoom * 100));
+      refreshPhotoSelect();
+    });
+    $("panelPhoto").addEventListener("change", function (ev) {
+      state.panels[selectedPanel].photo = ev.target.value;
+      scheduleDraw();
+    });
+    $("panX").addEventListener("input", function (ev) {
+      state.panels[selectedPanel].panX = Number(ev.target.value);
+      scheduleDraw();
+    });
+    $("panY").addEventListener("input", function (ev) {
+      state.panels[selectedPanel].panY = Number(ev.target.value);
+      scheduleDraw();
+    });
+    $("zoom").addEventListener("input", function (ev) {
+      state.panels[selectedPanel].zoom = Number(ev.target.value) / 100;
+      scheduleDraw();
+    });
+    $("calloutToggle").addEventListener("change", function (ev) {
+      state.callouts = ev.target.checked;
+      scheduleDraw();
+    });
+    $("callout1").addEventListener("input", function (ev) {
+      state.callout1 = ev.target.value;
+      scheduleDraw();
+    });
+    $("callout2").addEventListener("input", function (ev) {
+      state.callout2 = ev.target.value;
+      scheduleDraw();
+    });
+    $("sealToggle").addEventListener("change", function (ev) {
+      state.seal = ev.target.checked;
+      scheduleDraw();
+    });
+    $("tagsToggle").addEventListener("change", function (ev) {
+      state.tags = ev.target.checked;
+      scheduleDraw();
+    });
+    $("billingToggle").addEventListener("change", function (ev) {
+      state.billing = ev.target.checked;
+      scheduleDraw();
     });
 
-    document.querySelectorAll('.size-btn').forEach(function (b) {
-      b.addEventListener('click', function () {
-        document.querySelectorAll('.size-btn').forEach(function (x) {
-          x.classList.toggle('active', x === b);
-        });
-        var parts = b.dataset.size.split('x');
-        exportSize = { w: Number(parts[0]), h: Number(parts[1]) };
-        state.size = b.dataset.size;
-      });
-    });
-
-    $('export-btn').addEventListener('click', function () {
-      var off = document.createElement('canvas');
-      ViceCover.renderCover(off, state, exportSize.w, exportSize.h);
-      off.toBlob(function (blob) {
-        var a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'vice-cover-' + exportSize.w + 'x' + exportSize.h + '.png';
-        a.click();
-        setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
-      }, 'image/png');
-    });
-
-    $('upload').addEventListener('change', function (e) {
-      var files = Array.prototype.slice.call(e.target.files || []);
+    $("upload").addEventListener("change", function (ev) {
+      var files = Array.prototype.slice.call(ev.target.files || []);
+      if (!files.length) return;
+      var pending = files.length;
       files.forEach(function (file) {
         var reader = new FileReader();
         reader.onload = function () {
-          var img = new Image();
-          img.onload = function () {
-            state.photos.push({ name: file.name.replace(/\.[^.]+$/, ''), src: reader.result, img: img });
-            buildControls();
-            render();
-          };
-          img.src = reader.result;
+          uploadCount += 1;
+          var key = "up" + uploadCount;
+          loadImage(reader.result).then(function (img) {
+            uploaded[key] = img;
+            photos[key] = img;
+            state.panels[selectedPanel].photo = key;
+            $("photoName").textContent = files.length + " photo(s) loaded: " + file.name;
+            refreshPhotoSelect();
+            scheduleDraw();
+          }).catch(function () { /* ignore a bad file */ });
+          pending -= 1;
         };
         reader.readAsDataURL(file);
       });
+      ev.target.value = "";
+    });
+
+    document.querySelectorAll("[data-export]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var key = btn.getAttribute("data-export");
+        var canvas = window.ViceCover.renderExport(state, photos, key);
+        canvas.toBlob(function (blob) {
+          if (!blob) return;
+          var size = window.ViceCover.EXPORT_SIZES[key];
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = "vice-cover-" + key + "-" + size[0] + "x" + size[1] + ".png";
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(function () {
+            URL.revokeObjectURL(a.href);
+            a.remove();
+          }, 500);
+        }, "image/png");
+      });
     });
   }
 
-  function applyShotParams() {
-    var photo = params.get('photo');
-    var caption = params.get('caption');
-    if (caption) {
-      state.title = caption;
-      $('in-title').value = caption;
-    }
-    if (photo) {
-      var idx = -1;
-      state.photos.forEach(function (p, i) {
-        if (p.name.toLowerCase() === photo.toLowerCase()) idx = i;
+  /* Screenshot helper: render the current state at an export size and
+     return a PNG data URL, so the maker can capture exact exports. */
+  function shotPng(sizeKey) {
+    var canvas = window.ViceCover.renderExport(state, photos, sizeKey);
+    return canvas.toDataURL("image/png");
+  }
+
+  function applyShot(preset) {
+    if (preset.layout) state.layout = preset.layout;
+    if (preset.grade) state.grade = preset.grade;
+    if (preset.titleStyle) state.titleStyle = preset.titleStyle;
+    if (preset.title) state.title = preset.title;
+    if (preset.subtitle) state.subtitle = preset.subtitle;
+    if (preset.panels) {
+      preset.panels.forEach(function (p, i) {
+        if (state.panels[i]) {
+          if (p.photo) state.panels[i].photo = p.photo;
+          if (typeof p.panX === "number") state.panels[i].panX = p.panX;
+          if (typeof p.panY === "number") state.panels[i].panY = p.panY;
+          if (typeof p.zoom === "number") state.panels[i].zoom = p.zoom;
+          if (p.tag) state.panels[i].tag = p.tag;
+        }
       });
-      if (idx >= 0) {
-        state.panels.forEach(function (t, i) { t.photo = (idx + i) % state.photos.length; });
-        state.panels[0].photo = idx;
-      }
     }
-    if (shot === 'cover') {
-      document.body.classList.add('shot-cover');
-      // Vary the look per cover shot so the three covers are distinct.
-      if (photo === 'neon') { state.layout = 'triptych'; state.grade = 'neon'; state.titleStyle = 'script'; }
-      if (photo === 'pier') { state.layout = 'focal'; state.grade = 'sunset'; state.titleStyle = 'neon'; }
-      if (photo === 'boulevard') { state.layout = 'hero-split'; state.grade = 'gold'; state.titleStyle = 'slab'; }
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    }
+    if (typeof preset.callouts === "boolean") state.callouts = preset.callouts;
+    if (typeof preset.seal === "boolean") state.seal = preset.seal;
+    if (typeof preset.tags === "boolean") state.tags = preset.tags;
+    if (typeof preset.billing === "boolean") state.billing = preset.billing;
+    setActive("layoutRow", "layout", state.layout);
+    setActive("gradeRow", "grade", state.grade);
+    setActive("titleRow", "tstyle", state.titleStyle);
+    refreshPanelControls();
+    draw();
   }
 
   function ready() {
-    // Signal to screenshot tooling that the first frame is painted.
-    window.__shotReady = true;
-    document.title = 'Vice Cover Studio — ready';
+    var keys = Object.keys(SAMPLES);
+    var jobs = keys.map(function (key) {
+      return loadImage(SAMPLES[key]).then(function (img) { photos[key] = img; });
+    });
+    return Promise.all(jobs).then(function () {
+      bind();
+      refreshPanelControls();
+      if (document.fonts && document.fonts.ready) {
+        return document.fonts.ready.then(draw);
+      }
+      draw();
+    }).catch(function () {
+      bind();
+      refreshPanelControls();
+      draw();
+    });
   }
 
-  Promise.all(SAMPLES.map(loadPhoto)).then(function (photos) {
-    state = ViceCover.defaultState(photos);
-    buildControls();
-    bindInputs();
-    applyShotParams();
-    // Wait for the bundled fonts so titles render in their real typeface.
-    var fontsReady = (document.fonts && document.fonts.ready) ? document.fonts.ready : Promise.resolve();
-    fontsReady.then(function () {
-      render();
-      setTimeout(ready, 120);
-    });
-    render();
-  });
+  window.__coverStudio = {
+    state: state,
+    photos: photos,
+    shotPng: shotPng,
+    applyShot: applyShot,
+    draw: draw
+  };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", ready);
+  } else {
+    ready();
+  }
 })();

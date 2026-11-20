@@ -1,396 +1,368 @@
-// Vice Cover Studio — cover renderer. No dependencies, plain canvas 2d.
-// drawCover(ctx, state, W, H) paints the whole poster: panels, grade,
-// title, callouts, seal, role tags and billing. Everything scales with W/H,
-// so the same state renders the preview and the 1080/1350/1920 exports.
-(function (global) {
-  'use strict';
+/* Vice Cover Studio — cover renderer.
+   Draws a multi-panel GTA-style poster on a canvas from a state object
+   and a set of loaded photos. No network: every image comes from the
+   app folder or from a file the user picked on their own machine. */
+(function () {
+  "use strict";
 
-  var GRADES = [
-    { id: 'sunset', name: 'Vice Sunset', deep: '#2a0a2e', wash: ['rgba(255,122,24,0.28)', 'rgba(255,46,136,0.22)', 'rgba(123,47,247,0.20)'], tint: 'rgba(255,46,136,0.10)', accent: '#ffc93c', glow: '#ff2e88' },
-    { id: 'neon', name: 'Neon Nights', deep: '#04122b', wash: ['rgba(34,230,255,0.26)', 'rgba(255,46,136,0.24)', 'rgba(123,47,247,0.22)'], tint: 'rgba(34,230,255,0.10)', accent: '#22e6ff', glow: '#22e6ff' },
-    { id: 'ocean', name: 'Ocean Drive', deep: '#032b2b', wash: ['rgba(0,210,190,0.26)', 'rgba(34,230,255,0.20)', 'rgba(0,80,120,0.22)'], tint: 'rgba(0,210,190,0.10)', accent: '#7df1ff', glow: '#00d2be' },
-    { id: 'gold', name: 'Palm Gold', deep: '#2b1a02', wash: ['rgba(255,201,60,0.30)', 'rgba(255,122,24,0.24)', 'rgba(120,60,0,0.20)'], tint: 'rgba(255,201,60,0.10)', accent: '#ff7a18', glow: '#ffc93c' },
-    { id: 'midnight', name: 'Midnight Purple', deep: '#12041f', wash: ['rgba(123,47,247,0.30)', 'rgba(255,46,136,0.20)', 'rgba(40,10,80,0.24)'], tint: 'rgba(123,47,247,0.12)', accent: '#c77dff', glow: '#7b2ff7' },
-    { id: 'bayside', name: 'Bayside Blue', deep: '#061a33', wash: ['rgba(60,120,255,0.28)', 'rgba(34,230,255,0.20)', 'rgba(10,40,90,0.22)'], tint: 'rgba(60,120,255,0.10)', accent: '#9cc3ff', glow: '#3c78ff' },
-    { id: 'haze', name: 'Heat Haze', deep: '#33120a', wash: ['rgba(255,140,60,0.30)', 'rgba(255,80,80,0.20)', 'rgba(255,200,120,0.18)'], tint: 'rgba(255,140,60,0.10)', accent: '#ffb37d', glow: '#ff8c3c' },
-  ];
+  var EXPORT_SIZES = {
+    square: [1080, 1080],
+    portrait: [1080, 1350],
+    wide: [1920, 1080]
+  };
 
-  // Panel rects are fractions of the canvas. `poly` (optional) clips a panel
-  // to a polygon instead of a rectangle, for the diagonal layout.
-  var LAYOUTS = [
-    { id: 'hero-split', name: 'Hero Split', panels: [
-      { x: 0, y: 0, w: 0.62, h: 1 },
-      { x: 0.62, y: 0, w: 0.38, h: 0.5 },
-      { x: 0.62, y: 0.5, w: 0.38, h: 0.5 },
-    ] },
-    { id: 'triptych', name: 'Triptych', panels: [
-      { x: 0, y: 0, w: 0.34, h: 1 },
-      { x: 0.34, y: 0, w: 0.32, h: 1 },
-      { x: 0.66, y: 0, w: 0.34, h: 1 },
-    ] },
-    { id: 'quad', name: 'Quad Grid', panels: [
-      { x: 0, y: 0, w: 0.5, h: 0.5 },
-      { x: 0.5, y: 0, w: 0.5, h: 0.5 },
-      { x: 0, y: 0.5, w: 0.5, h: 0.5 },
-      { x: 0.5, y: 0.5, w: 0.5, h: 0.5 },
-    ] },
-    { id: 'focal', name: 'Focal Hero', hero: 0, panels: [
-      { x: 0, y: 0, w: 1, h: 0.72 },
-      { x: 0, y: 0.72, w: 0.5, h: 0.28 },
-      { x: 0.5, y: 0.72, w: 0.5, h: 0.28 },
-    ] },
-    { id: 'slash', name: 'Diagonal Slash', panels: [
-      { x: 0, y: 0, w: 1, h: 0.58, poly: [[0, 0], [1, 0], [1, 0.42], [0, 0.58]] },
-      { x: 0, y: 0.42, w: 0.55, h: 0.58, poly: [[0, 0.28], [0.55, 0], [0.55, 1], [0, 1]] },
-      { x: 0.55, y: 0.42, w: 0.45, h: 0.58, poly: [[0.45, 0], [1, 0.28], [1, 1], [0.45, 1]] },
-    ] },
-    { id: 'stack', name: 'Poster Stack', panels: [
-      { x: 0.06, y: 0.04, w: 0.88, h: 0.6 },
-      { x: 0.06, y: 0.68, w: 0.42, h: 0.28 },
-      { x: 0.52, y: 0.68, w: 0.42, h: 0.28 },
-    ] },
-  ];
+  /* Panel rectangles as fractions [x, y, w, h] of the cover. */
+  var LAYOUTS = {
+    hero: {
+      label: "Focal Hero",
+      panels: [
+        [0, 0, 1, 0.62],
+        [0, 0.64, 0.49, 0.36],
+        [0.51, 0.64, 0.49, 0.36]
+      ]
+    },
+    triptych: {
+      label: "Triptych",
+      panels: [
+        [0, 0, 0.32, 1],
+        [0.34, 0, 0.32, 1],
+        [0.68, 0, 0.32, 1]
+      ]
+    },
+    grid: {
+      label: "Grid 2x2",
+      panels: [
+        [0, 0, 0.49, 0.49],
+        [0.51, 0, 0.49, 0.49],
+        [0, 0.51, 0.49, 0.49],
+        [0.51, 0.51, 0.49, 0.49]
+      ]
+    },
+    split: {
+      label: "Split",
+      panels: [
+        [0, 0, 0.58, 1],
+        [0.6, 0, 0.4, 0.49],
+        [0.6, 0.51, 0.4, 0.49]
+      ]
+    },
+    banner: {
+      label: "Banner",
+      panels: [
+        [0, 0, 1, 0.49],
+        [0, 0.51, 1, 0.49]
+      ]
+    },
+    mosaic: {
+      label: "Mosaic",
+      panels: [
+        [0, 0, 0.58, 1],
+        [0.6, 0, 0.4, 0.32],
+        [0.6, 0.34, 0.4, 0.32],
+        [0.6, 0.68, 0.4, 0.32]
+      ]
+    }
+  };
 
-  var TITLE_STYLES = [
-    { id: 'neon', name: 'Neon Reign' },
-    { id: 'slab', name: 'Sunset Slab' },
-    { id: 'script', name: 'Vice Script' },
-  ];
+  /* Colour grades: two stops for a diagonal tint wash. */
+  var GRADES = {
+    sunset: { label: "Sunset", from: "#ff7a2e", to: "#d63384" },
+    neon: { label: "Neon", from: "#ff2e88", to: "#2ee6ff" },
+    dusk: { label: "Dusk", from: "#1a0533", to: "#ff6b35" },
+    vice: { label: "Vice", from: "#ff9a3d", to: "#7b2ff7" },
+    mono: { label: "Mono", from: "#e8e8e8", to: "#101010" },
+    teal: { label: "Teal", from: "#00e5a0", to: "#0057ff" },
+    candy: { label: "Candy", from: "#ff5da2", to: "#ffd23d" }
+  };
 
-  var SIZES = [
-    { id: '1080x1080', w: 1080, h: 1080, label: '1080 × 1080' },
-    { id: '1080x1350', w: 1080, h: 1350, label: '1080 × 1350' },
-    { id: '1920x1080', w: 1920, h: 1080, label: '1920 × 1080' },
-  ];
+  var TITLE_STYLES = {
+    solid: "Solid",
+    outline: "Outline",
+    gradient: "Gradient"
+  };
 
-  function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+  var DEFAULT_TAGS = ["LUCIA", "JASON", "VICE CITY", "OCEAN DR", "NEON", "PIER"];
 
-  function gradeById(id) {
-    for (var i = 0; i < GRADES.length; i++) if (GRADES[i].id === id) return GRADES[i];
-    return GRADES[0];
-  }
-
-  function layoutById(id) {
-    for (var i = 0; i < LAYOUTS.length; i++) if (LAYOUTS[i].id === id) return LAYOUTS[i];
-    return LAYOUTS[0];
-  }
-
-  function defaultState(photos) {
+  function defaultState() {
     var panels = [];
-    for (var i = 0; i < 4; i++) {
-      panels.push({ photo: i % Math.max(1, photos.length), zoom: 1, panX: 0, panY: 0, focus: 50 });
+    for (var i = 0; i < 6; i++) {
+      panels.push({
+        photo: ["boulevard", "neon", "pier"][i % 3],
+        panX: 0,
+        panY: 0,
+        zoom: 1.2,
+        tag: DEFAULT_TAGS[i % DEFAULT_TAGS.length]
+      });
     }
     return {
-      layout: 'hero-split',
-      grade: 'sunset',
-      titleStyle: 'neon',
-      title: 'Neon Reign',
-      subtitle: 'VICE CITY',
-      tagline: 'One last score under the neon sun.',
-      callout: 'THE SCORE OF THE CENTURY',
-      role: 'THE DRIVER',
-      showCallouts: true,
-      showSeal: true,
-      showRoles: true,
-      showBilling: true,
-      size: '1080x1080',
-      photos: photos,
+      layout: "hero",
+      grade: "sunset",
+      titleStyle: "solid",
+      title: "VICE CITY",
+      subtitle: "NEON REIGN",
       panels: panels,
+      callouts: true,
+      callout1: "WELCOME BACK",
+      callout2: "TWO PROTAGONISTS",
+      seal: true,
+      tags: true,
+      billing: true
     };
   }
 
-  // Cover-fit draw of one photo into a rect, with zoom / pan / focus.
-  function drawPhoto(ctx, img, rect, t) {
+  function clamp(v, lo, hi) {
+    return v < lo ? lo : v > hi ? hi : v;
+  }
+
+  /* Draw one photo into a panel rect, cover-fit, with pan and zoom. */
+  function drawPhoto(ctx, img, rect, setting) {
+    var px = rect[0], py = rect[1], pw = rect[2], ph = rect[3];
     var iw = img.naturalWidth || img.width;
     var ih = img.naturalHeight || img.height;
     if (!iw || !ih) return;
-    var scale = Math.max(rect.w / iw, rect.h / ih) * t.zoom;
+    var zoom = setting.zoom || 1;
+    var scale = Math.max(pw / iw, ph / ih) * zoom;
     var dw = iw * scale;
     var dh = ih * scale;
-    // Focus shifts the crop window: 0 looks left/top, 100 looks right/bottom.
-    var fx = ((t.focus - 50) / 50) * Math.max(0, (dw - rect.w) / 2);
-    var fy = ((t.focus - 50) / 50) * Math.max(0, (dh - rect.h) / 2) * 0.5;
-    var cx = rect.x + rect.w / 2 + (t.panX / 100) * rect.w * 0.25 - fx;
-    var cy = rect.y + rect.h / 2 + (t.panY / 100) * rect.h * 0.25 - fy;
-    ctx.drawImage(img, cx - dw / 2, cy - dh / 2, dw, dh);
-  }
-
-  function clipPanel(ctx, p, W, H) {
+    var ox = (pw - dw) / 2 + ((setting.panX || 0) / 100) * ((dw - pw) / 2);
+    var oy = (ph - dh) / 2 + ((setting.panY || 0) / 100) * ((dh - ph) / 2);
+    ctx.save();
     ctx.beginPath();
-    if (p.poly) {
-      for (var i = 0; i < p.poly.length; i++) {
-        var px = p.poly[i][0] * W;
-        var py = p.poly[i][1] * H;
-        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-      }
-      ctx.closePath();
-    } else {
-      ctx.rect(p.x * W, p.y * H, p.w * W, p.h * H);
-    }
+    ctx.rect(px, py, pw, ph);
     ctx.clip();
+    ctx.drawImage(img, px + ox, py + oy, dw, dh);
+    ctx.restore();
   }
 
-  function spaced(ctx, text, x, y, spacing) {
-    var cx = x;
-    for (var i = 0; i < text.length; i++) {
-      ctx.fillText(text[i], cx, y);
-      cx += ctx.measureText(text[i]).width + spacing;
+  /* Tint wash for the chosen grade, plus a soft edge darkening. */
+  function applyGrade(ctx, rect, grade, w, h) {
+    var px = rect[0], py = rect[1], pw = rect[2], ph = rect[3];
+    var wash = ctx.createLinearGradient(px, py, px + pw, py + ph);
+    wash.addColorStop(0, grade.from);
+    wash.addColorStop(1, grade.to);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(px, py, pw, ph);
+    ctx.clip();
+    if (grade === GRADES.mono) {
+      ctx.globalCompositeOperation = "saturation";
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = "#808080";
+      ctx.fillRect(px, py, pw, ph);
+      ctx.globalCompositeOperation = "source-over";
+      ctx.globalAlpha = 1;
     }
-    return cx;
+    ctx.globalCompositeOperation = "overlay";
+    ctx.globalAlpha = 0.42;
+    ctx.fillStyle = wash;
+    ctx.fillRect(px, py, pw, ph);
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 1;
+    var vig = ctx.createRadialGradient(
+      px + pw / 2, py + ph / 2, Math.min(pw, ph) * 0.35,
+      px + pw / 2, py + ph / 2, Math.max(pw, ph) * 0.75
+    );
+    vig.addColorStop(0, "rgba(0,0,0,0)");
+    vig.addColorStop(1, "rgba(0,0,0,0.28)");
+    ctx.fillStyle = vig;
+    ctx.fillRect(px, py, pw, ph);
+    ctx.restore();
+    void w; void h;
   }
 
-  function wrapText(ctx, text, maxW) {
-    var words = String(text).split(/\s+/);
-    var lines = [];
-    var line = '';
-    for (var i = 0; i < words.length; i++) {
-      var test = line ? line + ' ' + words[i] : words[i];
-      if (ctx.measureText(test).width > maxW && line) {
-        lines.push(line);
-        line = words[i];
-      } else {
-        line = test;
-      }
-    }
-    if (line) lines.push(line);
-    return lines;
-  }
-
-  function drawTitle(ctx, state, grade, W, H) {
-    var u = W / 1080; // scale unit
-    var title = (state.title || 'UNTITLED').toUpperCase();
-    var sub = (state.subtitle || '').toUpperCase();
-    var pad = 44 * u;
-    var titleSize = Math.round(W * 0.105);
-    var y = H - 150 * u;
-
-    // Subtitle above the title, letterspaced.
-    if (sub) {
-      ctx.font = Math.round(30 * u) + 'px "Bebas Neue", sans-serif';
-      ctx.fillStyle = grade.accent;
-      ctx.textBaseline = 'alphabetic';
-      spaced(ctx, sub, pad, y - titleSize - 18 * u, 10 * u);
-    }
-
-    if (state.titleStyle === 'slab') {
-      // Solid slab band behind white block type.
-      ctx.font = titleSize + 'px Anton, sans-serif';
-      var tw = ctx.measureText(title).width;
-      var bandH = titleSize * 1.18;
-      var bandY = y - titleSize - 8 * u;
-      ctx.fillStyle = grade.glow;
-      ctx.fillRect(pad - 14 * u, bandY, tw + 28 * u, bandH);
-      ctx.fillStyle = '#fff';
-      ctx.fillText(title, pad, y);
-      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-      ctx.lineWidth = 2 * u;
-      ctx.strokeText(title, pad, y);
-    } else if (state.titleStyle === 'script') {
-      // Slanted script-style block type with a gold underline sweep.
-      ctx.save();
-      ctx.translate(pad, y);
-      ctx.transform(1, 0, -0.14, 1, 0, 0);
-      ctx.font = 'italic ' + titleSize + 'px Anton, sans-serif';
-      ctx.fillStyle = '#fff';
-      ctx.shadowColor = grade.glow;
-      ctx.shadowBlur = 26 * u;
-      ctx.fillText(title, 0, 0);
-      ctx.restore();
-      ctx.fillStyle = grade.accent;
-      ctx.fillRect(pad, y + 16 * u, Math.min(W * 0.5, ctx.measureText(title).width), 5 * u);
-    } else {
-      // Neon Reign: white block type, pink edge, cyan echo.
-      ctx.font = titleSize + 'px Anton, sans-serif';
-      ctx.fillStyle = 'rgba(34,230,255,0.85)';
-      ctx.fillText(title, pad + 6 * u, y + 6 * u);
-      ctx.strokeStyle = grade.glow;
-      ctx.lineWidth = 3 * u;
-      ctx.strokeText(title, pad, y);
-      ctx.fillStyle = '#fff';
-      ctx.fillText(title, pad, y);
-    }
-
-    // Tagline under the title.
-    if (state.tagline) {
-      ctx.font = 'italic ' + Math.round(26 * u) + 'px Georgia, serif';
-      ctx.fillStyle = 'rgba(255,255,255,0.92)';
-      var lines = wrapText(ctx, state.tagline, W - pad * 2);
-      var ty = y + 42 * u;
-      for (var i = 0; i < lines.length; i++) {
-        ctx.fillText(lines[i], pad, ty + i * 34 * u);
-      }
-    }
-  }
-
-  function drawCallout(ctx, state, grade, W, H) {
-    if (!state.showCallouts || !state.callout) return;
-    var u = W / 1080;
-    ctx.font = Math.round(26 * u) + 'px "Archivo Black", sans-serif';
-    var text = state.callout.toUpperCase();
+  function drawTag(ctx, text, x, y, size) {
+    ctx.save();
+    ctx.font = size + "px 'Archivo Black', sans-serif";
     var tw = ctx.measureText(text).width;
-    var bw = tw + 44 * u;
-    var bh = 64 * u;
-    var bx = W - bw - 36 * u;
-    var by = 36 * u;
-    ctx.fillStyle = 'rgba(10,4,24,0.92)';
-    ctx.strokeStyle = grade.accent;
-    ctx.lineWidth = 3 * u;
-    ctx.beginPath();
-    ctx.roundRect(bx, by, bw, bh, 10 * u);
-    ctx.fill();
-    ctx.stroke();
-    // Tail.
-    ctx.beginPath();
-    ctx.moveTo(bx + 30 * u, by + bh);
-    ctx.lineTo(bx + 52 * u, by + bh + 22 * u);
-    ctx.lineTo(bx + 62 * u, by + bh);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(10,4,24,0.92)';
-    ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(text, bx + 22 * u, by + bh / 2 + 1 * u);
-    ctx.textBaseline = 'alphabetic';
+    var pad = size * 0.55;
+    ctx.fillStyle = "rgba(10,6,20,0.82)";
+    ctx.fillRect(x, y, tw + pad * 2, size * 1.7);
+    ctx.fillStyle = "#2ee6ff";
+    ctx.fillRect(x, y, 4, size * 1.7);
+    ctx.fillStyle = "#ffffff";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, x + pad + 2, y + size * 0.88);
+    ctx.restore();
   }
 
-  function drawSeal(ctx, state, grade, W, H) {
-    if (!state.showSeal) return;
-    var u = W / 1080;
-    var cx = W - 92 * u;
-    var cy = H - 92 * u;
-    var r = 62 * u;
+  function drawCallout(ctx, text, x, y, size, color, dark) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(-0.07);
+    ctx.font = size + "px 'Bebas Neue', sans-serif";
+    var tw = ctx.measureText(text).width;
+    var pad = size * 0.6;
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, tw + pad * 2, size * 1.55);
+    ctx.fillStyle = dark;
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, pad, size * 0.82);
+    ctx.restore();
+  }
+
+  /* Circular seal with text running around the rim and a star inside. */
+  function drawSeal(ctx, cx, cy, r, label) {
     ctx.save();
     ctx.translate(cx, cy);
-    ctx.rotate(-0.18);
-    ctx.strokeStyle = grade.accent;
-    ctx.lineWidth = 3 * u;
-    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
-    ctx.beginPath(); ctx.arc(0, 0, r - 9 * u, 0, Math.PI * 2); ctx.stroke();
-    ctx.fillStyle = grade.accent;
-    ctx.font = Math.round(34 * u) + 'px Anton, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('VC', 0, 4 * u);
-    ctx.font = Math.round(15 * u) + 'px "Bebas Neue", sans-serif';
-    ctx.fillText('VICE CITY', 0, 26 * u);
-    ctx.fillText('EST. 2026', 0, -24 * u);
-    ctx.restore();
-    ctx.textAlign = 'left';
-  }
-
-  function drawRoles(ctx, state, grade, W, H) {
-    if (!state.showRoles || !state.role) return;
-    var u = W / 1080;
-    var layout = layoutById(state.layout);
-    var p0 = layout.panels[0];
-    var x = (p0.x + 0.03) * W;
-    var y = (p0.y + 0.05) * H;
-    ctx.font = Math.round(24 * u) + 'px "Archivo Black", sans-serif';
-    var text = state.role.toUpperCase();
-    var tw = ctx.measureText(text).width;
-    ctx.fillStyle = grade.accent;
+    ctx.fillStyle = "rgba(12,6,24,0.88)";
     ctx.beginPath();
-    ctx.roundRect(x, y, tw + 30 * u, 44 * u, 6 * u);
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#14061f';
-    ctx.fillText(text, x + 15 * u, y + 31 * u);
-  }
-
-  function drawBilling(ctx, state, grade, W, H) {
-    if (!state.showBilling) return;
-    var u = W / 1080;
-    var line = 'A NEON REIGN PRODUCTION  •  STARRING THE DRIVER  •  THE FIXER  •  THE LOOKOUT  •  VICE CITY 2026';
-    ctx.font = Math.round(17 * u) + 'px "Bebas Neue", sans-serif';
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
-    ctx.textAlign = 'center';
-    ctx.fillText(line, W / 2, H - 14 * u);
-    ctx.textAlign = 'left';
-  }
-
-  function drawCover(ctx, state, W, H) {
-    var grade = gradeById(state.grade);
-    var layout = layoutById(state.layout);
-    ctx.save();
-    ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = grade.deep;
-    ctx.fillRect(0, 0, W, H);
-
-    var photos = state.photos || [];
-    for (var i = 0; i < layout.panels.length; i++) {
-      var p = layout.panels[i];
-      var t = state.panels[i] || { photo: 0, zoom: 1, panX: 0, panY: 0, focus: 50 };
-      var rect = { x: p.x * W, y: p.y * H, w: p.w * W, h: p.h * H };
+    ctx.strokeStyle = "#ffb02e";
+    ctx.lineWidth = Math.max(2, r * 0.05);
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.92, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.62, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = "#ffb02e";
+    ctx.font = "bold " + Math.round(r * 0.34) + "px 'Archivo Black', sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    var ring = label + "  \u2022  EST. 1986  \u2022  ";
+    var step = (Math.PI * 2) / ring.length;
+    for (var i = 0; i < ring.length; i++) {
+      var a = -Math.PI / 2 + i * step;
       ctx.save();
-      clipPanel(ctx, p, W, H);
-      var photo = photos[t.photo % Math.max(1, photos.length)];
-      if (photo && photo.img) {
-        drawPhoto(ctx, photo.img, rect, t);
-      } else {
-        // Empty panel: grade-coloured placeholder so the poster never breaks.
-        var g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
-        g.addColorStop(0, grade.wash[0]);
-        g.addColorStop(1, grade.deep);
-        ctx.fillStyle = g;
-        ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-      }
-      // Grade tint over the photo.
-      ctx.fillStyle = grade.tint;
-      ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+      ctx.rotate(a);
+      ctx.translate(0, -r * 0.77);
+      ctx.font = Math.round(r * 0.16) + "px 'Archivo Black', sans-serif";
+      ctx.fillText(ring[i], 0, 0);
       ctx.restore();
-      // Panel seam.
-      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-      ctx.lineWidth = Math.max(2, W / 540);
-      ctx.beginPath();
-      if (p.poly) {
-        for (var k = 0; k < p.poly.length; k++) {
-          var px = p.poly[k][0] * W;
-          var py = p.poly[k][1] * H;
-          if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-        }
-        ctx.closePath();
-      } else {
-        ctx.rect(rect.x, rect.y, rect.w, rect.h);
-      }
-      ctx.stroke();
     }
-
-    // Full-canvas grade wash + vignette.
-    var wash = ctx.createLinearGradient(0, 0, 0, H);
-    wash.addColorStop(0, grade.wash[0]);
-    wash.addColorStop(0.55, grade.wash[1]);
-    wash.addColorStop(1, grade.wash[2]);
-    ctx.fillStyle = wash;
-    ctx.fillRect(0, 0, W, H);
-    var vig = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.42, W / 2, H / 2, Math.max(W, H) * 0.75);
-    vig.addColorStop(0, 'rgba(0,0,0,0)');
-    vig.addColorStop(1, 'rgba(0,0,0,0.38)');
-    ctx.fillStyle = vig;
-    ctx.fillRect(0, 0, W, H);
-
-    drawRoles(ctx, state, grade, W, H);
-    drawCallout(ctx, state, grade, W, H);
-    drawTitle(ctx, state, grade, W, H);
-    drawSeal(ctx, state, grade, W, H);
-    drawBilling(ctx, state, grade, W, H);
+    /* five-point star */
+    ctx.beginPath();
+    for (var k = 0; k < 10; k++) {
+      var rr = k % 2 === 0 ? r * 0.42 : r * 0.18;
+      var aa = -Math.PI / 2 + (k * Math.PI) / 5;
+      var sx = Math.cos(aa) * rr;
+      var sy = Math.sin(aa) * rr;
+      if (k === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+    }
+    ctx.closePath();
+    ctx.fill();
     ctx.restore();
   }
 
-  function renderCover(canvas, state, W, H) {
-    canvas.width = W;
-    canvas.height = H;
-    var ctx = canvas.getContext('2d');
-    drawCover(ctx, state, W, H);
+  function drawTitleBlock(ctx, state, grade, w, h) {
+    var titleSize = Math.round(w * 0.115);
+    var subSize = Math.round(w * 0.038);
+    var bottom = h * 0.985;
+    /* scrim so the lettering reads over any photo */
+    var scrim = ctx.createLinearGradient(0, h * 0.62, 0, h);
+    scrim.addColorStop(0, "rgba(8,4,18,0)");
+    scrim.addColorStop(0.55, "rgba(8,4,18,0.55)");
+    scrim.addColorStop(1, "rgba(8,4,18,0.88)");
+    ctx.fillStyle = scrim;
+    ctx.fillRect(0, h * 0.62, w, h * 0.38);
+
+    var title = (state.title || "VICE CITY").toUpperCase();
+    var sub = (state.subtitle || "").toUpperCase();
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    var titleY = bottom - subSize * 2.1 - (state.billing ? h * 0.045 : h * 0.01);
+    ctx.font = titleSize + "px 'Anton', sans-serif";
+    if (state.titleStyle === "outline") {
+      ctx.lineWidth = Math.max(2, titleSize * 0.045);
+      ctx.strokeStyle = "#ffffff";
+      ctx.strokeText(title, w / 2, titleY);
+      ctx.fillStyle = "rgba(10,6,20,0.55)";
+      ctx.fillText(title, w / 2, titleY);
+    } else if (state.titleStyle === "gradient") {
+      var g = ctx.createLinearGradient(0, titleY - titleSize, 0, titleY);
+      g.addColorStop(0, grade.from);
+      g.addColorStop(1, grade.to);
+      ctx.fillStyle = g;
+      ctx.lineWidth = Math.max(2, titleSize * 0.03);
+      ctx.strokeStyle = "rgba(10,6,20,0.9)";
+      ctx.strokeText(title, w / 2, titleY);
+      ctx.fillText(title, w / 2, titleY);
+    } else {
+      ctx.lineWidth = Math.max(2, titleSize * 0.04);
+      ctx.strokeStyle = "rgba(10,6,20,0.95)";
+      ctx.strokeText(title, w / 2, titleY);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(title, w / 2, titleY);
+    }
+    if (sub) {
+      ctx.font = subSize + "px 'Bebas Neue', sans-serif";
+      ctx.fillStyle = "#ffd23d";
+      var subY = titleY + subSize * 1.15;
+      /* letter-spacing by hand: spaces between letters */
+      var spaced = sub.split("").join("\u2009");
+      ctx.fillText(spaced, w / 2, subY);
+    }
+    if (state.billing) {
+      var bSize = Math.max(9, Math.round(w * 0.011));
+      ctx.font = bSize + "px 'Archivo Black', sans-serif";
+      ctx.fillStyle = "rgba(255,255,255,0.75)";
+      var line = "A NEON REIGN PRODUCTION  \u00b7  STARRING LUCIA & JASON  \u00b7  VICE CITY  \u00b7  MMXXVI";
+      ctx.fillText(line, w / 2, bottom - bSize * 0.4);
+      ctx.fillStyle = "rgba(255,255,255,0.35)";
+      ctx.fillRect(w * 0.08, bottom - bSize * 1.9, w * 0.84, 1);
+    }
+    ctx.restore();
+  }
+
+  /* Main entry: paint the whole cover onto a canvas of its own size. */
+  function renderCover(canvas, state, photos) {
+    var ctx = canvas.getContext("2d");
+    var w = canvas.width;
+    var h = canvas.height;
+    var layout = LAYOUTS[state.layout] || LAYOUTS.hero;
+    var grade = GRADES[state.grade] || GRADES.sunset;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = "#0d0716";
+    ctx.fillRect(0, 0, w, h);
+
+    var gap = Math.round(Math.min(w, h) * 0.008);
+    layout.panels.forEach(function (frac, i) {
+      var rect = [
+        Math.round(frac[0] * w) + (frac[0] > 0 ? gap / 2 : 0),
+        Math.round(frac[1] * h) + (frac[1] > 0 ? gap / 2 : 0),
+        Math.round(frac[2] * w) - (frac[0] > 0 ? gap / 2 : 0) - (frac[0] + frac[2] < 1 ? gap / 2 : 0),
+        Math.round(frac[3] * h) - (frac[1] > 0 ? gap / 2 : 0) - (frac[1] + frac[3] < 1 ? gap / 2 : 0)
+      ];
+      var setting = state.panels[i] || state.panels[0];
+      var img = photos[setting.photo];
+      if (img) drawPhoto(ctx, img, rect, setting);
+      applyGrade(ctx, rect, grade, w, h);
+      if (state.tags && setting.tag) {
+        drawTag(ctx, setting.tag, rect[0] + Math.round(w * 0.012), rect[1] + rect[3] - Math.round(w * 0.045), Math.round(w * 0.016));
+      }
+    });
+
+    if (state.callouts) {
+      var cSize = Math.round(w * 0.028);
+      if (state.callout1) drawCallout(ctx, state.callout1, Math.round(w * 0.03), Math.round(h * 0.035), cSize, "#ff2e88", "#ffffff");
+      if (state.callout2) drawCallout(ctx, state.callout2, Math.round(w * 0.62), Math.round(h * 0.035), cSize, "#2ee6ff", "#0d0716");
+    }
+    if (state.seal) {
+      drawSeal(ctx, w * 0.9, h * 0.56, Math.round(w * 0.055), "VICE CITY");
+    }
+    drawTitleBlock(ctx, state, grade, w, h);
+  }
+
+  /* Render the same cover at an export size and hand back the canvas. */
+  function renderExport(state, photos, sizeKey) {
+    var size = EXPORT_SIZES[sizeKey] || EXPORT_SIZES.square;
+    var canvas = document.createElement("canvas");
+    canvas.width = size[0];
+    canvas.height = size[1];
+    renderCover(canvas, state, photos);
     return canvas;
   }
 
-  global.ViceCover = {
-    GRADES: GRADES,
+  window.ViceCover = {
+    EXPORT_SIZES: EXPORT_SIZES,
     LAYOUTS: LAYOUTS,
+    GRADES: GRADES,
     TITLE_STYLES: TITLE_STYLES,
-    SIZES: SIZES,
+    DEFAULT_TAGS: DEFAULT_TAGS,
     defaultState: defaultState,
-    drawCover: drawCover,
     renderCover: renderCover,
-    gradeById: gradeById,
-    layoutById: layoutById,
+    renderExport: renderExport
   };
-})(typeof window !== 'undefined' ? window : globalThis);
+})();
