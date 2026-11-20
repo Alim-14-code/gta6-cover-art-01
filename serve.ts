@@ -1,66 +1,68 @@
-// Tiny static server for the app/ folder (Node 22, standard library only).
-// Development convenience only: `node serve.ts` serves app/ on
-// http://localhost:8080 (or --port <n>). Refuses paths outside app/.
-import { createReadStream, statSync } from "node:fs";
-import { createServer } from "node:http";
-import { extname, join, normalize, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+// A tiny static server for app/ (Node, standard library only): `node serve.ts`
+// serves app/ on http://localhost:8080 so the entry can be tried locally with
+// no build step. It sends the MIME types an offline web app needs, refuses
+// any path outside app/, and does nothing else: a development convenience,
+// not a web server for the internet.
+import { createReadStream, statSync } from 'node:fs';
+import { createServer } from 'node:http';
+import { extname, join, normalize, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const appDir = resolve(fileURLToPath(new URL("./app", import.meta.url)));
-const argv = process.argv.slice(2);
-const at = argv.indexOf("--port");
-const want = at === -1 ? 8080 : Number(argv[at + 1]);
-const port = Number.isInteger(want) && want > 0 && want < 65536 ? want : 8080;
+const root = resolve(fileURLToPath(new URL('./app', import.meta.url)));
+const args = process.argv.slice(2);
+const portFlag = args.indexOf('--port');
+const wanted = portFlag === -1 ? 8080 : Number(args[portFlag + 1]);
+const port = Number.isInteger(wanted) && wanted > 0 && wanted < 65536 ? wanted : 8080;
 
-const TYPES = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".mjs": "text/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-  ".svg": "image/svg+xml",
-  ".ico": "image/x-icon",
-  ".woff2": "font/woff2",
-  ".woff": "font/woff",
-  ".ttf": "font/ttf",
-  ".otf": "font/otf",
-  ".txt": "text/plain; charset=utf-8",
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
+  '.ttf': 'font/ttf',
+  '.otf': 'font/otf',
+  '.txt': 'text/plain; charset=utf-8',
 };
 
-createServer((req, res) => {
-  let path = "/";
+createServer((request, response) => {
+  const url = new URL(request.url ?? '/', 'http://localhost');
+  let pathname: string;
   try {
-    path = decodeURIComponent(new URL(req.url ?? "/", "http://localhost").pathname);
+    pathname = decodeURIComponent(url.pathname);
   } catch {
-    res.writeHead(400).end("bad request");
+    response.writeHead(400).end('bad request');
     return;
   }
-  if (path.endsWith("/")) path += "index.html";
-  const file = resolve(join(appDir, normalize(path)));
-  if (file !== appDir && !file.startsWith(appDir + sep)) {
-    res.writeHead(403).end("forbidden");
+  if (pathname.endsWith('/')) pathname += 'index.html';
+  const file = resolve(join(root, normalize(pathname)));
+  if (file !== root && !file.startsWith(root + sep)) {
+    response.writeHead(403).end('forbidden');
     return;
   }
-  let size;
+  let size: number;
   try {
-    const st = statSync(file);
-    if (!st.isFile()) throw new Error("not a file");
-    size = st.size;
+    const stats = statSync(file);
+    if (!stats.isFile()) throw new Error('not a file');
+    size = stats.size;
   } catch {
-    res.writeHead(404).end("not found");
+    response.writeHead(404).end('not found');
     return;
   }
-  res.writeHead(200, {
-    "content-type": TYPES[extname(file).toLowerCase()] ?? "application/octet-stream",
-    "content-length": size,
-    "cache-control": "no-store",
+  response.writeHead(200, {
+    'content-type': MIME[extname(file).toLowerCase()] ?? 'application/octet-stream',
+    'content-length': size,
   });
-  createReadStream(file).pipe(res);
-}).listen(port, "127.0.0.1", () => {
-  console.log(`app/ is on http://localhost:${port}`);
+  createReadStream(file).pipe(response);
+}).listen(port, () => {
+  console.log(`Vice Cover Studio at http://localhost:${port}/`);
 });
