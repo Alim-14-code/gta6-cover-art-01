@@ -1,44 +1,63 @@
-[![gta6-cover-art-01](https://make.fun/badge/gta6-cover-art-01.svg)](https://make.fun/bounty/gta6-cover-art-01)
-[![rank](https://make.fun/badge/gta6-cover-art-01/Alim-14-code/gta6-cover-art-01/rank.svg)](https://make.fun/bounty/gta6-cover-art-01)
-[![reward](https://make.fun/badge/gta6-cover-art-01/Alim-14-code/gta6-cover-art-01/reward.svg)](https://make.fun/bounty/gta6-cover-art-01)
-
-Entry for the [gta6-cover-art-01 bounty](https://make.fun/bounty/gta6-cover-art-01) on make.fun.
-
 # Vice Cover Studio
 
-An offline cover maker that turns a photo and a caption into a GTA-style
-poster cover — built for make.fun's `gta6-cover-art-01` bounty.
+A GTA-style cover art maker that runs entirely offline in a desktop browser.
+Turn your own photos — or the three built-in sample photos — into a poster
+cover with slanted multi-panel layouts, Vice City colour grades, key-art
+lettering and one-click PNG export.
 
 ## What it does
 
-- **4 layouts**: Vice Trio (three diagonal panels), Hero + Strip, Four Corners
-  (2×2), Full Bleed.
-- **Photos per panel**: upload your own, or use the three built-in sample
-  photos (a sunset boulevard, a neon night street, a golden-hour pier).
-  Click a panel to select it, drag to pan, scroll (or the slider) to zoom,
-  "Fill all panels" copies the selected photo everywhere.
-- **4 colour grades**: Vice Sunset, Neon Night, Ocean Drive, Noir — each a
-  photo filter plus a colour wash and a vignette.
-- **Caption**: title + tagline in three local OFL fonts (Anton, Bebas Neue,
-  Archivo Black), five colours, size and tilt sliders, outline, top/bottom
-  position.
-- **Export**: a real PNG at exactly 1080×1080, 1080×1350, or 1920×1080.
+- **Your photos + 3 built-in samples** — upload your own images, or use the
+  Boulevard, Neon Street and Pier Sunset samples that ship with the app.
+- **6 multi-panel layouts** — Vice Trio (3 slanted panels), Hero + Strip,
+  Four Corners, Full Bleed, Duo and Stacked, all with diagonal dividers.
+- **Hero close-up + focal point** — click a panel's photo to set its focus
+  point; the cover-fit crop centres on it. Drag to pan, scroll to zoom, or
+  use the per-panel zoom slider.
+- **Per-panel controls** — each panel has its own photo, zoom, pan and
+  focus. "Fill all panels" puts one photo across the whole cover.
+- **7 colour grades** — Vice Sunset, Neon Night, Ocean Drive, Golden Hour,
+  Midnight Drive, Heatwave and Poster Ink.
+- **Caption + tagline lettering** — title and tagline in Anton, Bebas Neue
+  and Archivo Black, with three title styles: Solid Bold, Retro Chrome
+  gradient and Outline.
+- **GTA key-art extras (toggleable)** — callout chips, a VC seal/badge,
+  role tags on the panels and a billing block ("starring" credits line).
+- **PNG export in 3 sizes** — 1080×1080 (1:1), 1080×1350 (4:5) and
+  1920×1080 (16:9), rendered on canvas from the same engine as the preview.
 
-Everything runs offline in a desktop browser — no network requests, no
-Rockstar logos, artwork, or fonts. The sample photos were made with an image
-model; the fonts are SIL OFL (see `app/fonts/OFL.txt`).
+## How to run
 
-## Run it
+Node 22 and a desktop browser are all you need. No build step, no install,
+no network at runtime — every font, photo and script is a local file.
 
+```sh
+node serve.ts
+# open http://localhost:8080
 ```
-node serve.ts        # opens http://localhost:8080
-```
 
-## Hand it in
+Pick a layout, give each panel a photo, drag / scroll on the preview to
+frame it, choose a grade and lettering, then Export PNG.
 
-```
+## Reproducible screenshots
+
+`?shot=` loads a fixed scene (used for the screenshots in this repo):
+
+- `?shot=cover` — Vice Trio cover, 16:9
+- `?shot=editor` — the editor with Hero + Strip / Neon Night
+- `?shot=cover-square` — Full Bleed cover, square
+- `?shot=cover-portrait` — Duo cover, portrait
+
+## How to hand in
+
+```sh
 mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 ```
 
-That writes `out/dossier.json` (the summary the judge reads) next to the
-copied `app/` and `screenshots/`.
+`main.ts` copies `app/` and `screenshots/` into the output directory and
+writes `dossier.json` with `buildDossier` from `vendor/makefun-app.ts`.
+
+## Licence
+
+MIT (see LICENSE). The display fonts (Anton, Bebas Neue, Archivo Black)
+are under the SIL Open Font License 1.1 — see `app/fonts/OFL.txt`.
