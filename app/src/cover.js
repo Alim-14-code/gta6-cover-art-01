@@ -1,246 +1,405 @@
-// Vice Cover Studio — the cover renderer. Pure canvas 2D, no network: it paints
-// the chosen layout's photo panels, washes the grade over them, and sets the big
-// condensed caption on top. Everything is drawn from a plain state object so the
-// editor, the export and the screenshot scenes all share one code path.
+// Vice Cover Studio — cover engine (cover.js).
+// Pure drawing logic: panel polygons, cover-fit placement with pan/zoom/focus,
+// colour grades and key-art lettering. No DOM access here, so the same code
+// draws the live preview and the exported PNGs.
 
-export const SIZES = {
-  '1080x1080': [1080, 1080],
-  '1080x1350': [1080, 1350],
-  '1920x1080': [1920, 1080],
+export const SAMPLE_PHOTOS = [
+  { id: 'boulevard', label: 'Boulevard', src: 'samples/boulevard.jpg' },
+  { id: 'neon', label: 'Neon Street', src: 'samples/neon.jpg' },
+  { id: 'pier', label: 'Pier Sunset', src: 'samples/pier.jpg' },
+];
+
+// Panel polygons are normalised [x, y] points (0..1) across the cover.
+// Slanted dividers give every layout its diagonal GTA key-art feel.
+export const LAYOUTS = {
+  trio: {
+    label: 'Vice Trio',
+    panels: [
+      { id: 'p1', poly: [[0, 0], [0.37, 0], [0.315, 1], [0, 1]] },
+      { id: 'p2', poly: [[0.37, 0], [0.685, 0], [0.63, 1], [0.315, 1]] },
+      { id: 'p3', poly: [[0.685, 0], [1, 0], [1, 1], [0.63, 1]] },
+    ],
+  },
+  'hero-strip': {
+    label: 'Hero + Strip',
+    panels: [
+      { id: 'p1', poly: [[0, 0], [1, 0], [1, 0.7], [0, 0.7]] },
+      { id: 'p2', poly: [[0, 0.7], [0.36, 0.7], [0.315, 1], [0, 1]] },
+      { id: 'p3', poly: [[0.36, 0.7], [0.685, 0.7], [0.64, 1], [0.315, 1]] },
+      { id: 'p4', poly: [[0.685, 0.7], [1, 0.7], [1, 1], [0.64, 1]] },
+    ],
+  },
+  corners: {
+    label: 'Four Corners',
+    panels: [
+      { id: 'p1', poly: [[0, 0], [0.52, 0], [0.47, 0.5], [0, 0.5]] },
+      { id: 'p2', poly: [[0.52, 0], [1, 0], [1, 0.5], [0.47, 0.5]] },
+      { id: 'p3', poly: [[0, 0.5], [0.47, 0.5], [0.42, 1], [0, 1]] },
+      { id: 'p4', poly: [[0.47, 0.5], [1, 0.5], [1, 1], [0.42, 1]] },
+    ],
+  },
+  fullbleed: {
+    label: 'Full Bleed',
+    panels: [{ id: 'p1', poly: [[0, 0], [1, 0], [1, 1], [0, 1]] }],
+  },
+  duo: {
+    label: 'Duo',
+    panels: [
+      { id: 'p1', poly: [[0, 0], [0.56, 0], [0.47, 1], [0, 1]] },
+      { id: 'p2', poly: [[0.56, 0], [1, 0], [1, 1], [0.47, 1]] },
+    ],
+  },
+  stacked: {
+    label: 'Stacked',
+    panels: [
+      { id: 'p1', poly: [[0, 0], [1, 0], [0.94, 0.36], [0, 0.36]] },
+      { id: 'p2', poly: [[0, 0.36], [0.94, 0.36], [0.88, 0.68], [0, 0.68]] },
+      { id: 'p3', poly: [[0, 0.68], [0.88, 0.68], [0.82, 1], [0, 1]] },
+    ],
+  },
 };
 
-export const FONTS = ['Anton', 'Bebas Neue', 'Archivo Black'];
+export const LAYOUT_ORDER = ['trio', 'hero-strip', 'corners', 'fullbleed', 'duo', 'stacked'];
 
-// Each grade is a canvas filter for the photos, a diagonal colour wash laid
-// over the whole cover, and how dark the vignette gets towards the corners.
+// A grade is a canvas filter plus a tinted gradient wash laid over the photo.
 export const GRADES = {
   sunset: {
     label: 'Vice Sunset',
-    filter: 'saturate(1.28) contrast(1.08) sepia(0.14)',
-    wash: [
-      [0, 'rgba(255, 122, 60, 0.10)'],
-      [0.55, 'rgba(255, 80, 120, 0.10)'],
-      [1, 'rgba(190, 30, 110, 0.30)'],
-    ],
-    vignette: 0.32,
+    filter: 'saturate(1.28) contrast(1.08) sepia(0.16) hue-rotate(-8deg)',
+    wash: ['rgba(255,110,60,0.16)', 'rgba(255,40,120,0.12)'],
   },
   neon: {
     label: 'Neon Night',
-    filter: 'saturate(1.55) contrast(1.16) hue-rotate(-10deg)',
-    wash: [
-      [0, 'rgba(255, 45, 150, 0.16)'],
-      [0.5, 'rgba(90, 40, 180, 0.10)'],
-      [1, 'rgba(0, 220, 255, 0.16)'],
-    ],
-    vignette: 0.4,
+    filter: 'saturate(1.45) contrast(1.16) brightness(0.94) hue-rotate(10deg)',
+    wash: ['rgba(255,0,180,0.14)', 'rgba(0,220,255,0.12)'],
   },
-  drive: {
+  ocean: {
     label: 'Ocean Drive',
-    filter: 'saturate(1.18) contrast(1.06)',
-    wash: [
-      [0, 'rgba(0, 190, 210, 0.10)'],
-      [0.5, 'rgba(255, 170, 80, 0.06)'],
-      [1, 'rgba(255, 110, 60, 0.20)'],
-    ],
-    vignette: 0.3,
+    filter: 'saturate(1.15) contrast(1.06) brightness(1.02)',
+    wash: ['rgba(0,190,210,0.13)', 'rgba(255,200,120,0.08)'],
   },
-  noir: {
-    label: 'Noir',
-    filter: 'grayscale(0.9) contrast(1.28) brightness(0.94)',
-    wash: [
-      [0, 'rgba(20, 20, 40, 0.10)'],
-      [1, 'rgba(0, 0, 0, 0.34)'],
-    ],
-    vignette: 0.48,
+  golden: {
+    label: 'Golden Hour',
+    filter: 'sepia(0.32) saturate(1.32) brightness(1.06) contrast(1.03)',
+    wash: ['rgba(255,190,60,0.15)', 'rgba(255,120,20,0.08)'],
+  },
+  midnight: {
+    label: 'Midnight Drive',
+    filter: 'brightness(0.86) contrast(1.22) saturate(1.12) hue-rotate(18deg)',
+    wash: ['rgba(10,30,120,0.20)', 'rgba(120,0,180,0.10)'],
+  },
+  heatwave: {
+    label: 'Heatwave',
+    filter: 'saturate(1.5) contrast(1.12) sepia(0.26) brightness(1.03)',
+    wash: ['rgba(255,60,20,0.16)', 'rgba(255,160,0,0.10)'],
+  },
+  ink: {
+    label: 'Poster Ink',
+    filter: 'grayscale(0.35) contrast(1.26) saturate(1.25) brightness(0.98)',
+    wash: ['rgba(20,10,40,0.14)', 'rgba(255,255,255,0.05)'],
   },
 };
 
-export const LAYOUTS = {
-  trio: { label: 'Vice Trio', panels: 3 },
-  hero: { label: 'Hero + Strip', panels: 3 },
-  quad: { label: 'Four Corners', panels: 4 },
-  single: { label: 'Full Bleed', panels: 1 },
+export const GRADE_ORDER = ['sunset', 'neon', 'ocean', 'golden', 'midnight', 'heatwave', 'ink'];
+
+export const TITLE_STYLES = {
+  solid: { label: 'Solid Bold' },
+  chrome: { label: 'Retro Chrome' },
+  outline: { label: 'Outline' },
 };
 
-// Panel outlines in unit space (0..1). The trio's slanted edges are the
-// poster's comic-book look; hero is one wide top panel over two bottom ones.
-export function layoutPolygons(layout, w, h) {
-  const scale = (points) => points.map(([x, y]) => [x * w, y * h]);
-  if (layout === 'trio') {
-    return [
-      scale([[0, 0], [0.44, 0], [0.36, 1], [0, 1]]),
-      scale([[0.46, 0], [0.70, 0], [0.62, 1], [0.38, 1]]),
-      scale([[0.72, 0], [1, 0], [1, 1], [0.64, 1]]),
-    ];
-  }
-  if (layout === 'hero') {
-    return [
-      scale([[0, 0], [1, 0], [1, 0.60], [0, 0.60]]),
-      scale([[0, 0.63], [0.485, 0.63], [0.485, 1], [0, 1]]),
-      scale([[0.515, 0.63], [1, 0.63], [1, 1], [0.515, 1]]),
-    ];
-  }
-  if (layout === 'quad') {
-    return [
-      scale([[0, 0], [0.485, 0], [0.485, 0.485], [0, 0.485]]),
-      scale([[0.515, 0], [1, 0], [1, 0.485], [0.515, 0.485]]),
-      scale([[0, 0.515], [0.485, 0.515], [0.485, 1], [0, 1]]),
-      scale([[0.515, 0.515], [1, 0.515], [1, 1], [0.515, 1]]),
-    ];
-  }
-  return [scale([[0, 0], [1, 0], [1, 1], [0, 1]])];
+export const ROLE_TAGS = ['THE DRIVER', 'THE LOOKOUT', 'THE FIXER', 'THE GETAWAY'];
+
+// Cover-fit placement: the focus point (fx, fy, 0..1 of the photo) lands on the
+// panel centre, zoom scales from the minimum cover scale, pan nudges in pixels.
+export function coverPlacement(imgW, imgH, panelW, panelH, panel) {
+  const base = Math.max(panelW / imgW, panelH / imgH);
+  const scale = base * (panel.zoom || 1);
+  const dw = imgW * scale;
+  const dh = imgH * scale;
+  const cx = panelW / 2 - panel.focusX * dw + (panel.panX || 0);
+  const cy = panelH / 2 - panel.focusY * dh + (panel.panY || 0);
+  // Clamp so the photo always covers the whole panel (no bare edges).
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  return { dx: clamp(cx, panelW - dw, 0), dy: clamp(cy, panelH - dh, 0), dw, dh };
 }
 
-function trace(ctx, poly) {
+// Bounding box of a normalised polygon in cover pixels.
+export function polyBox(poly, W, H) {
+  const xs = poly.map((p) => p[0] * W);
+  const ys = poly.map((p) => p[1] * H);
+  const x0 = Math.min(...xs);
+  const y0 = Math.min(...ys);
+  return { x: x0, y: y0, w: Math.max(...xs) - x0, h: Math.max(...ys) - y0 };
+}
+
+export function tracePoly(ctx, poly, W, H) {
   ctx.beginPath();
-  ctx.moveTo(poly[0][0], poly[0][1]);
-  for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i][0], poly[i][1]);
+  poly.forEach(([x, y], i) => {
+    if (i === 0) ctx.moveTo(x * W, y * H);
+    else ctx.lineTo(x * W, y * H);
+  });
   ctx.closePath();
 }
 
-function boundsOf(poly) {
-  let x0 = Infinity;
-  let y0 = Infinity;
-  let x1 = -Infinity;
-  let y1 = -Infinity;
-  for (const [x, y] of poly) {
-    if (x < x0) x0 = x;
-    if (y < y0) y0 = y;
-    if (x > x1) x1 = x;
-    if (y > y1) y1 = y;
+// Is a cover-space point inside a panel polygon? (ray casting)
+export function pointInPoly(px, py, poly, W, H) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i][0] * W;
+    const yi = poly[i][1] * H;
+    const xj = poly[j][0] * W;
+    const yj = poly[j][1] * H;
+    if (yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) inside = !inside;
   }
-  return [x0, y0, x1, y1];
+  return inside;
 }
 
-// Which panel (if any) holds the point (x, y) in cover pixels.
-export function panelAtPoint(x, y, w, h, layout) {
-  const polys = layoutPolygons(layout, w, h);
-  for (let i = 0; i < polys.length; i++) {
-    const poly = polys[i];
-    let inside = false;
-    for (let a = 0, b = poly.length - 1; a < poly.length; b = a++) {
-      const [ax, ay] = poly[a];
-      const [bx, by] = poly[b];
-      if (ay > y !== by > y && x < ((bx - ax) * (y - ay)) / (by - ay) + ax) inside = !inside;
-    }
-    if (inside) return i;
-  }
-  return -1;
-}
-
-// Paints one photo into one panel: cover-fit, scaled by the panel's zoom and
-// shifted by its pan offsets (fractions of the panel size, -0.5..0.5).
-function paintPanel(ctx, poly, panel, filter) {
-  const [x0, y0, x1, y1] = boundsOf(poly);
-  const pw = x1 - x0;
-  const ph = y1 - y0;
-  ctx.save();
-  trace(ctx, poly);
-  ctx.clip();
-  ctx.fillStyle = '#1a1030';
-  ctx.fillRect(x0, y0, pw, ph);
-  const img = panel.img;
-  if (img) {
-    const zoom = panel.zoom || 1;
-    const base = Math.max(pw / img.naturalWidth, ph / img.naturalHeight) * zoom;
-    const dw = img.naturalWidth * base;
-    const dh = img.naturalHeight * base;
-    const dx = x0 + (pw - dw) / 2 + (panel.ox || 0) * pw;
-    const dy = y0 + (ph - dh) / 2 + (panel.oy || 0) * ph;
-    ctx.filter = filter;
-    ctx.drawImage(img, dx, dy, dw, dh);
-    ctx.filter = 'none';
-  }
-  ctx.restore();
-}
-
-// Shrink the font until the line fits maxWidth, never below 12px.
-function fitSize(ctx, text, family, startSize, maxWidth) {
-  let size = startSize;
-  ctx.font = `${size}px "${family}", sans-serif`;
-  while (ctx.measureText(text).width > maxWidth && size > 12) {
-    size -= 2;
-    ctx.font = `${size}px "${family}", sans-serif`;
-  }
-  return size;
-}
-
-// Draws the caption block: tagline on the far side of the main line, the
-// whole block tilted and placed at the top or the bottom of the cover.
-function paintCaption(ctx, w, h, caption) {
-  const text = (caption.text || '').trim().toUpperCase();
-  const tagline = (caption.tagline || '').trim().toUpperCase();
-  if (!text && !tagline) return;
-  const tilt = ((caption.tilt || 0) * Math.PI) / 180;
-  const atTop = (caption.position || 'bottom') === 'top';
-  // The tagline rides on the far side of the main caption: above it when the
-  // caption sits at the bottom, below it when the caption sits at the top.
-  const dir = atTop ? 1 : -1;
-  // The block's anchor sits near the edge it belongs to; the tagline rides
-  // on the far side of the main line (above it at the bottom, below at top).
-  const anchorY = atTop ? h * 0.10 : h * 0.90;
-  const gap = h * 0.016;
-  ctx.save();
-  ctx.translate(w / 2, anchorY);
-  ctx.rotate(tilt);
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  const mainSize = text
-    ? fitSize(ctx, text, caption.font || 'Anton', h * (caption.size || 0.11), w * 0.92)
-    : 0;
-  const tagSize = tagline
-    ? fitSize(ctx, tagline, 'Bebas Neue', h * 0.038, w * 0.8)
-    : 0;
-  const letter = (line, size, family, color, dy) => {
-    if (!line) return;
-    ctx.font = `${size}px "${family}", sans-serif`;
-    try { ctx.letterSpacing = `${Math.round(size * 0.04)}px`; } catch (_) { /* older canvas */ }
-    if (caption.outline !== false) {
-      ctx.lineWidth = Math.max(2, size * 0.10);
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
-      ctx.lineJoin = 'round';
-      ctx.strokeText(line, 0, dy);
-    }
-    ctx.fillStyle = color;
-    ctx.fillText(line, 0, dy);
-  };
-  letter(tagline, tagSize, 'Bebas Neue', caption.tagColor || '#ffd166', text ? dir * (mainSize + gap) : 0);
-  letter(text, mainSize, caption.font || 'Anton', caption.color || '#ffffff', 0);
-  try { ctx.letterSpacing = '0px'; } catch (_) { /* older canvas */ }
-  ctx.restore();
-}
-
-// `state`: { layout, grade, panels: [{img, zoom, ox, oy}], caption }.
-// Paints the whole cover onto the canvas at the canvas's own size.
-export function drawCover(canvas, state) {
-  const ctx = canvas.getContext('2d');
-  const { width: w, height: h } = canvas;
+// Draw the whole cover onto ctx at W x H pixels.
+// state: { layout, grade, title, tagline, titleStyle, extras:{chips,seal,billing,roles},
+//          panels: [{ photo: HTMLImageElement|null, zoom, panX, panY, focusX, focusY }] }
+// selected: index of the panel to outline in the editor preview (-1 = none).
+export function drawCover(ctx, W, H, state, images, selected = -1) {
+  const layout = LAYOUTS[state.layout] || LAYOUTS.trio;
   const grade = GRADES[state.grade] || GRADES.sunset;
-  // White first: the gaps between panels read as white rules.
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, w, h);
-  const polys = layoutPolygons(state.layout || 'trio', w, h);
-  const panels = state.panels || [];
-  polys.forEach((poly, i) => paintPanel(ctx, poly, panels[i] || {}, grade.filter));
-  // Colour grade: a warm or neon wash over everything, then a vignette.
-  const wash = ctx.createLinearGradient(0, 0, w, h);
-  for (const [stop, color] of grade.wash) wash.addColorStop(stop, color);
-  ctx.fillStyle = wash;
-  ctx.fillRect(0, 0, w, h);
-  const vig = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.35, w / 2, h / 2, Math.max(w, h) * 0.75);
-  vig.addColorStop(0, 'rgba(0, 0, 0, 0)');
-  vig.addColorStop(1, `rgba(0, 0, 0, ${grade.vignette})`);
-  ctx.fillStyle = vig;
-  ctx.fillRect(0, 0, w, h);
-  paintCaption(ctx, w, h, state.caption || {});
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#0b0614';
+  ctx.fillRect(0, 0, W, H);
+
+  layout.panels.forEach((def, i) => {
+    const panel = state.panels[i] || {};
+    const img = images[panel.photoId];
+    const box = polyBox(def.poly, W, H);
+    ctx.save();
+    tracePoly(ctx, def.poly, W, H);
+    ctx.clip();
+    if (img && img.naturalWidth) {
+      const p = coverPlacement(img.naturalWidth, img.naturalHeight, box.w, box.h, panel);
+      ctx.filter = grade.filter;
+      ctx.drawImage(img, box.x + p.dx, box.y + p.dy, p.dw, p.dh);
+      ctx.filter = 'none';
+    } else {
+      // Empty panel: dark checker so the layout still reads.
+      ctx.fillStyle = i % 2 ? '#1a1030' : '#241640';
+      ctx.fillRect(box.x, box.y, box.w, box.h);
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.font = `600 ${Math.max(12, Math.round(H * 0.022))}px system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText('Add a photo', box.x + box.w / 2, box.y + box.h / 2);
+    }
+    // Grade wash.
+    const wash = ctx.createLinearGradient(box.x, box.y, box.x + box.w, box.y + box.h);
+    wash.addColorStop(0, grade.wash[0]);
+    wash.addColorStop(1, grade.wash[1]);
+    ctx.fillStyle = wash;
+    ctx.fillRect(box.x, box.y, box.w, box.h);
+    // Vignette for depth.
+    const vig = ctx.createRadialGradient(
+      box.x + box.w / 2, box.y + box.h / 2, Math.min(box.w, box.h) * 0.35,
+      box.x + box.w / 2, box.y + box.h / 2, Math.max(box.w, box.h) * 0.75,
+    );
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, 'rgba(0,0,0,0.28)');
+    ctx.fillStyle = vig;
+    ctx.fillRect(box.x, box.y, box.w, box.h);
+    ctx.restore();
+
+    // Slanted divider stroke along the panel edge.
+    ctx.save();
+    tracePoly(ctx, def.poly, W, H);
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.lineWidth = Math.max(2, W * 0.002);
+    ctx.stroke();
+    ctx.restore();
+
+    // Focus marker for the selected panel (editor preview only).
+    if (i === selected) {
+      const fx = box.x + panel.focusX * box.w;
+      const fy = box.y + panel.focusY * box.h;
+      ctx.save();
+      ctx.strokeStyle = '#ff2e88';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(fx, fy, Math.max(10, W * 0.012), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(fx - 16, fy);
+      ctx.lineTo(fx + 16, fy);
+      ctx.moveTo(fx, fy - 16);
+      ctx.lineTo(fx, fy + 16);
+      ctx.stroke();
+      ctx.restore();
+    }
+  });
+
+  // Selected panel outline.
+  if (selected >= 0 && layout.panels[selected]) {
+    ctx.save();
+    tracePoly(ctx, layout.panels[selected].poly, W, H);
+    ctx.strokeStyle = '#ff2e88';
+    ctx.lineWidth = Math.max(3, W * 0.004);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  drawLettering(ctx, W, H, state);
+  drawExtras(ctx, W, H, state);
 }
 
-// Renders the same cover at an export size and hands back a fresh canvas.
-export function renderExport(state, sizeName) {
-  const [w, h] = SIZES[sizeName] || SIZES['1080x1080'];
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  drawCover(canvas, state);
-  return canvas;
+function fitFont(ctx, text, maxWidth, startPx, family, weight) {
+  let px = startPx;
+  while (px > 10) {
+    ctx.font = `${weight} ${px}px ${family}`;
+    if (ctx.measureText(text).width <= maxWidth) break;
+    px -= 2;
+  }
+  return px;
+}
+
+function drawLettering(ctx, W, H, state) {
+  const title = (state.title || '').trim();
+  const tagline = (state.tagline || '').trim();
+  if (!title && !tagline) return;
+  const pad = W * 0.04;
+  const baseY = H * 0.9;
+  ctx.save();
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+
+  if (tagline) {
+    const tagPx = fitFont(ctx, tagline.toUpperCase(), W * 0.6, Math.round(H * 0.045), '"Bebas Neue", sans-serif', 400);
+    ctx.font = `400 ${tagPx}px "Bebas Neue", sans-serif`;
+    ctx.fillStyle = '#ffd166';
+    ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+    ctx.lineWidth = Math.max(2, tagPx * 0.08);
+    ctx.strokeText(tagline.toUpperCase(), pad, baseY - H * 0.17);
+    ctx.fillText(tagline.toUpperCase(), pad, baseY - H * 0.17);
+  }
+
+  if (title) {
+    const titlePx = fitFont(ctx, title.toUpperCase(), W - pad * 2, Math.round(H * 0.115), 'Anton, "Archivo Black", sans-serif', 400);
+    ctx.font = `400 ${titlePx}px Anton, "Archivo Black", sans-serif`;
+    const y = baseY;
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+    ctx.lineWidth = Math.max(4, titlePx * 0.14);
+    ctx.strokeText(title.toUpperCase(), pad, y);
+    if (state.titleStyle === 'chrome') {
+      const g = ctx.createLinearGradient(0, y - titlePx, 0, y);
+      g.addColorStop(0, '#fff7d6');
+      g.addColorStop(0.45, '#ffb347');
+      g.addColorStop(0.55, '#ff2e88');
+      g.addColorStop(1, '#7b2ff7');
+      ctx.fillStyle = g;
+    } else if (state.titleStyle === 'outline') {
+      ctx.fillStyle = 'rgba(0,0,0,0.15)';
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = Math.max(3, titlePx * 0.07);
+    } else {
+      ctx.fillStyle = '#ffffff';
+    }
+    ctx.fillText(title.toUpperCase(), pad, y);
+    if (state.titleStyle === 'outline') ctx.strokeText(title.toUpperCase(), pad, y);
+  }
+  ctx.restore();
+}
+
+function drawExtras(ctx, W, H, state) {
+  const ex = state.extras || {};
+  const pad = W * 0.04;
+  ctx.save();
+
+  if (ex.chips) {
+    const chips = ['VICE CITY', 'EST. 2026', 'OPEN WORLD'];
+    const chipH = Math.round(H * 0.042);
+    const gap = Math.round(W * 0.012);
+    let x = pad;
+    const y = H * 0.045;
+    ctx.font = `400 ${Math.round(chipH * 0.52)}px "Bebas Neue", sans-serif`;
+    ctx.textBaseline = 'middle';
+    chips.forEach((c, i) => {
+      const w = ctx.measureText(c).width + chipH * 1.1;
+      ctx.fillStyle = i === 0 ? '#ff2e88' : 'rgba(10,6,20,0.78)';
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+      ctx.lineWidth = 1.5;
+      roundRect(ctx, x, y, w, chipH, chipH / 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.fillText(c, x + w / 2, y + chipH / 2 + 1);
+      x += w + gap;
+    });
+  }
+
+  if (ex.seal) {
+    const r = Math.round(H * 0.055);
+    const cx = W - pad - r;
+    const cy = H * 0.1;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(10,6,20,0.82)';
+    ctx.fill();
+    ctx.strokeStyle = '#ffd166';
+    ctx.lineWidth = Math.max(2, r * 0.06);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.78, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255,209,102,0.7)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = '#ffd166';
+    ctx.font = `400 ${Math.round(r * 0.5)}px Anton, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('VC', cx, cy - r * 0.12);
+    ctx.font = `400 ${Math.round(r * 0.22)}px "Bebas Neue", sans-serif`;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('★ 2026 ★', cx, cy + r * 0.42);
+  }
+
+  if (ex.roles) {
+    const layout = LAYOUTS[state.layout] || LAYOUTS.trio;
+    ctx.font = `400 ${Math.max(11, Math.round(H * 0.026))}px "Bebas Neue", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    layout.panels.forEach((def, i) => {
+      const box = polyBox(def.poly, W, H);
+      const label = ROLE_TAGS[i % ROLE_TAGS.length];
+      const tw = ctx.measureText(label).width + 18;
+      const th = Math.max(18, Math.round(H * 0.034));
+      const x = box.x + box.w / 2 - tw / 2;
+      const y = box.y + box.h - th - Math.round(H * 0.05);
+      ctx.fillStyle = 'rgba(10,6,20,0.8)';
+      roundRect(ctx, x, y, tw, th, 3);
+      ctx.fill();
+      ctx.fillStyle = '#ffd166';
+      ctx.fillText(label, box.x + box.w / 2, y + th / 2 + 1);
+    });
+  }
+
+  if (ex.billing) {
+    const line = 'A VICE COVER STUDIO PRODUCTION  •  STARRING THE DRIVER, THE LOOKOUT & THE FIXER  •  LEONIDA 2026';
+    let px = Math.max(10, Math.round(H * 0.016));
+    ctx.font = `600 ${px}px system-ui, sans-serif`;
+    while (px > 8 && ctx.measureText(line).width > W * 0.96) {
+      px -= 1;
+      ctx.font = `600 ${px}px system-ui, sans-serif`;
+    }
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fillText(line, W / 2, H - H * 0.015);
+  }
+  ctx.restore();
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
 }
