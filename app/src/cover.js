@@ -1,325 +1,396 @@
-// Vice Cover Studio — cover engine (vanilla ES module, no dependencies).
-// Draws a GTA-style multi-panel poster to a 2D canvas: layouts, grades,
-// title styles, per-panel pan/zoom/focus, callouts, seal, role tags, billing.
+// Vice Cover Studio — cover renderer. No dependencies, plain canvas 2d.
+// drawCover(ctx, state, W, H) paints the whole poster: panels, grade,
+// title, callouts, seal, role tags and billing. Everything scales with W/H,
+// so the same state renders the preview and the 1080/1350/1920 exports.
+(function (global) {
+  'use strict';
 
-export const PHOTOS = ["boulevard", "neon", "pier"];
+  var GRADES = [
+    { id: 'sunset', name: 'Vice Sunset', deep: '#2a0a2e', wash: ['rgba(255,122,24,0.28)', 'rgba(255,46,136,0.22)', 'rgba(123,47,247,0.20)'], tint: 'rgba(255,46,136,0.10)', accent: '#ffc93c', glow: '#ff2e88' },
+    { id: 'neon', name: 'Neon Nights', deep: '#04122b', wash: ['rgba(34,230,255,0.26)', 'rgba(255,46,136,0.24)', 'rgba(123,47,247,0.22)'], tint: 'rgba(34,230,255,0.10)', accent: '#22e6ff', glow: '#22e6ff' },
+    { id: 'ocean', name: 'Ocean Drive', deep: '#032b2b', wash: ['rgba(0,210,190,0.26)', 'rgba(34,230,255,0.20)', 'rgba(0,80,120,0.22)'], tint: 'rgba(0,210,190,0.10)', accent: '#7df1ff', glow: '#00d2be' },
+    { id: 'gold', name: 'Palm Gold', deep: '#2b1a02', wash: ['rgba(255,201,60,0.30)', 'rgba(255,122,24,0.24)', 'rgba(120,60,0,0.20)'], tint: 'rgba(255,201,60,0.10)', accent: '#ff7a18', glow: '#ffc93c' },
+    { id: 'midnight', name: 'Midnight Purple', deep: '#12041f', wash: ['rgba(123,47,247,0.30)', 'rgba(255,46,136,0.20)', 'rgba(40,10,80,0.24)'], tint: 'rgba(123,47,247,0.12)', accent: '#c77dff', glow: '#7b2ff7' },
+    { id: 'bayside', name: 'Bayside Blue', deep: '#061a33', wash: ['rgba(60,120,255,0.28)', 'rgba(34,230,255,0.20)', 'rgba(10,40,90,0.22)'], tint: 'rgba(60,120,255,0.10)', accent: '#9cc3ff', glow: '#3c78ff' },
+    { id: 'haze', name: 'Heat Haze', deep: '#33120a', wash: ['rgba(255,140,60,0.30)', 'rgba(255,80,80,0.20)', 'rgba(255,200,120,0.18)'], tint: 'rgba(255,140,60,0.10)', accent: '#ffb37d', glow: '#ff8c3c' },
+  ];
 
-export const LAYOUTS = {
-  hero:   { name: "Hero Solo",     panels: [[0, 0, 1, 1]] },
-  hero3:  { name: "Hero + Three",  panels: [[0, 0, 0.62, 1], [0.62, 0, 0.38, 0.34], [0.62, 0.34, 0.38, 0.33], [0.62, 0.67, 0.38, 0.33]] },
-  grid4:  { name: "Four-Panel Grid", panels: [[0, 0, 0.5, 0.5], [0.5, 0, 0.5, 0.5], [0, 0.5, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5]] },
-  bleed:  { name: "Full Bleed",    panels: [[0, 0, 1, 1]] },
-  trio:   { name: "Trio Strip",    panels: [[0, 0, 0.34, 1], [0.34, 0, 0.32, 1], [0.66, 0, 0.34, 1]] },
-  grid9:  { name: "Nine-Panel Grid", panels: [[0, 0, 1 / 3, 1 / 3], [1 / 3, 0, 1 / 3, 1 / 3], [2 / 3, 0, 1 / 3, 1 / 3], [0, 1 / 3, 1 / 3, 1 / 3], [1 / 3, 1 / 3, 1 / 3, 1 / 3], [2 / 3, 1 / 3, 1 / 3, 1 / 3], [0, 2 / 3, 1 / 3, 1 / 3], [1 / 3, 2 / 3, 1 / 3, 1 / 3], [2 / 3, 2 / 3, 1 / 3, 1 / 3]] },
-};
+  // Panel rects are fractions of the canvas. `poly` (optional) clips a panel
+  // to a polygon instead of a rectangle, for the diagonal layout.
+  var LAYOUTS = [
+    { id: 'hero-split', name: 'Hero Split', panels: [
+      { x: 0, y: 0, w: 0.62, h: 1 },
+      { x: 0.62, y: 0, w: 0.38, h: 0.5 },
+      { x: 0.62, y: 0.5, w: 0.38, h: 0.5 },
+    ] },
+    { id: 'triptych', name: 'Triptych', panels: [
+      { x: 0, y: 0, w: 0.34, h: 1 },
+      { x: 0.34, y: 0, w: 0.32, h: 1 },
+      { x: 0.66, y: 0, w: 0.34, h: 1 },
+    ] },
+    { id: 'quad', name: 'Quad Grid', panels: [
+      { x: 0, y: 0, w: 0.5, h: 0.5 },
+      { x: 0.5, y: 0, w: 0.5, h: 0.5 },
+      { x: 0, y: 0.5, w: 0.5, h: 0.5 },
+      { x: 0.5, y: 0.5, w: 0.5, h: 0.5 },
+    ] },
+    { id: 'focal', name: 'Focal Hero', hero: 0, panels: [
+      { x: 0, y: 0, w: 1, h: 0.72 },
+      { x: 0, y: 0.72, w: 0.5, h: 0.28 },
+      { x: 0.5, y: 0.72, w: 0.5, h: 0.28 },
+    ] },
+    { id: 'slash', name: 'Diagonal Slash', panels: [
+      { x: 0, y: 0, w: 1, h: 0.58, poly: [[0, 0], [1, 0], [1, 0.42], [0, 0.58]] },
+      { x: 0, y: 0.42, w: 0.55, h: 0.58, poly: [[0, 0.28], [0.55, 0], [0.55, 1], [0, 1]] },
+      { x: 0.55, y: 0.42, w: 0.45, h: 0.58, poly: [[0.45, 0], [1, 0.28], [1, 1], [0.45, 1]] },
+    ] },
+    { id: 'stack', name: 'Poster Stack', panels: [
+      { x: 0.06, y: 0.04, w: 0.88, h: 0.6 },
+      { x: 0.06, y: 0.68, w: 0.42, h: 0.28 },
+      { x: 0.52, y: 0.68, w: 0.42, h: 0.28 },
+    ] },
+  ];
 
-export const GRADES = {
-  sunset: { name: "Sunset", top: "#ff7a5c", mid: "#ff9e7a", bot: "#7a2d6e", ink: "#2a1030", glow: "#ffb347" },
-  neon:   { name: "Neon",   top: "#ff2fb3", mid: "#7a2bff", bot: "#00e5ff", ink: "#0d0221", glow: "#00e5ff" },
-  vice:   { name: "Vice",   top: "#ff5da2", mid: "#b537f2", bot: "#3a0ca3", ink: "#1b1035", glow: "#ff5da2" },
-  gold:   { name: "Gold",   top: "#ffd166", mid: "#ff9f43", bot: "#7a3b12", ink: "#2b1a08", glow: "#ffe08a" },
-  teal:   { name: "Teal",   top: "#2ec4b6", mid: "#118ab2", bot: "#073b4c", ink: "#062a33", glow: "#7ef0e2" },
-  mono:   { name: "Mono",   top: "#e8e8e8", mid: "#9a9a9a", bot: "#222222", ink: "#111111", glow: "#ffffff" },
-  noir:   { name: "Noir",   top: "#ff4d6d", mid: "#3d0c2e", bot: "#050505", ink: "#000000", glow: "#ff4d6d" },
-};
+  var TITLE_STYLES = [
+    { id: 'neon', name: 'Neon Reign' },
+    { id: 'slab', name: 'Sunset Slab' },
+    { id: 'script', name: 'Vice Script' },
+  ];
 
-export const TITLES = {
-  block:     { name: "Block",     font: "Anton",       sub: "Bebas Neue" },
-  condensed: { name: "Condensed", font: "Bebas Neue",  sub: "Anton" },
-  heavy:     { name: "Heavy",     font: "Archivo Black", sub: "Bebas Neue" },
-};
+  var SIZES = [
+    { id: '1080x1080', w: 1080, h: 1080, label: '1080 × 1080' },
+    { id: '1080x1350', w: 1080, h: 1350, label: '1080 × 1350' },
+    { id: '1920x1080', w: 1920, h: 1080, label: '1920 × 1080' },
+  ];
 
-export function defaultState() {
-  return {
-    layout: "hero3",
-    grade: "sunset",
-    titleStyle: "block",
-    title: "NEON REIGN",
-    subtitle: "a Vice City story",
-    panels: [
-      { photo: "pier", zoom: 1.15, panX: 0, panY: 0, fx: 0.5, fy: 0.42, tag: "LEAD" },
-      { photo: "boulevard", zoom: 1.2, panX: 0, panY: 0, fx: 0.5, fy: 0.5, tag: "CREW" },
-      { photo: "neon", zoom: 1.2, panX: 0, panY: 0, fx: 0.5, fy: 0.4, tag: "CREW" },
-      { photo: "boulevard", zoom: 1.35, panX: 0, panY: 0, fx: 0.5, fy: 0.55, tag: "GUEST" },
-    ],
-    callouts: [
-      { text: "STARRING LEONIDA", x: 0.06, y: 0.06 },
-      { text: "EST. 2026", x: 0.82, y: 0.06 },
-    ],
-    seal: { on: true, pos: "br" },
-    billing: { on: true, text: "VICE COVER STUDIO  •  A FAN-MADE POSTER  •  PHOTOS DRAWN IN-BROWSER  •  NO ROCKSTAR ARTWORK" },
-    grain: true,
-    vignette: true,
-  };
-}
+  function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 
-const cache = new Map();
-export function loadPhoto(name) {
-  if (cache.has(name)) return cache.get(name);
-  const p = new Promise((res, rej) => {
-    const im = new Image();
-    im.onload = () => res(im);
-    im.onerror = rej;
-    im.src = "samples/" + name + ".jpg";
-  });
-  cache.set(name, p);
-  return p;
-}
-export function loadPhotoFile(file) {
-  return new Promise((res, rej) => {
-    const rd = new FileReader();
-    rd.onload = () => {
-      const im = new Image();
-      im.onload = () => res(im);
-      im.onerror = rej;
-      im.src = rd.result;
+  function gradeById(id) {
+    for (var i = 0; i < GRADES.length; i++) if (GRADES[i].id === id) return GRADES[i];
+    return GRADES[0];
+  }
+
+  function layoutById(id) {
+    for (var i = 0; i < LAYOUTS.length; i++) if (LAYOUTS[i].id === id) return LAYOUTS[i];
+    return LAYOUTS[0];
+  }
+
+  function defaultState(photos) {
+    var panels = [];
+    for (var i = 0; i < 4; i++) {
+      panels.push({ photo: i % Math.max(1, photos.length), zoom: 1, panX: 0, panY: 0, focus: 50 });
+    }
+    return {
+      layout: 'hero-split',
+      grade: 'sunset',
+      titleStyle: 'neon',
+      title: 'Neon Reign',
+      subtitle: 'VICE CITY',
+      tagline: 'One last score under the neon sun.',
+      callout: 'THE SCORE OF THE CENTURY',
+      role: 'THE DRIVER',
+      showCallouts: true,
+      showSeal: true,
+      showRoles: true,
+      showBilling: true,
+      size: '1080x1080',
+      photos: photos,
+      panels: panels,
     };
-    rd.onerror = rej;
-    rd.readAsDataURL(file);
-  });
-}
-
-let noiseCanvas = null;
-function noiseTile() {
-  if (noiseCanvas) return noiseCanvas;
-  const s = 128;
-  noiseCanvas = document.createElement("canvas");
-  noiseCanvas.width = s;
-  noiseCanvas.height = s;
-  const c = noiseCanvas.getContext("2d");
-  const id = c.createImageData(s, s);
-  for (let i = 0; i < id.data.length; i += 4) {
-    const v = 100 + Math.floor(Math.random() * 100);
-    id.data[i] = v; id.data[i + 1] = v; id.data[i + 2] = v; id.data[i + 3] = 255;
   }
-  c.putImageData(id, 0, 0);
-  return noiseCanvas;
-}
 
-function coverFit(img, dw, dh, zoom, panX, panY, fx, fy) {
-  // Returns source rect so the focal point (fx, fy) stays centred under zoom/pan.
-  const iw = img.naturalWidth, ih = img.naturalHeight;
-  const base = Math.max(dw / iw, dh / ih);
-  const sc = base * zoom;
-  const sw = dw / sc, sh = dh / sc;
-  let sx = fx * iw - sw / 2 + panX * sw * 0.5;
-  let sy = fy * ih - sh / 2 + panY * sh * 0.5;
-  sx = Math.max(0, Math.min(iw - sw, sx));
-  sy = Math.max(0, Math.min(ih - sh, sy));
-  return { sx, sy, sw, sh };
-}
-
-function gradeWash(ctx, W, H, g) {
-  const gr = ctx.createLinearGradient(0, 0, W * 0.25, H);
-  gr.addColorStop(0, g.top);
-  gr.addColorStop(0.55, g.mid);
-  gr.addColorStop(1, g.bot);
-  ctx.save();
-  ctx.globalCompositeOperation = "overlay";
-  ctx.globalAlpha = 0.55;
-  ctx.fillStyle = gr;
-  ctx.fillRect(0, 0, W, H);
-  ctx.restore();
-  ctx.save();
-  ctx.globalCompositeOperation = "soft-light";
-  ctx.globalAlpha = 0.5;
-  ctx.fillStyle = g.mid;
-  ctx.fillRect(0, 0, W, H);
-  ctx.restore();
-}
-
-function drawPanel(ctx, img, rect, p, g, W, H, selected) {
-  const [fx0, fy0, fw, fh] = rect;
-  const x = fx0 * W, y = fy0 * H, w = fw * W, h = fh * H;
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(x, y, w, h);
-  ctx.clip();
-  if (img) {
-    const r = coverFit(img, w, h, p.zoom, p.panX, p.panY, p.fx, p.fy);
-    ctx.drawImage(img, r.sx, r.sy, r.sw, r.sh, x, y, w, h);
-  } else {
-    ctx.fillStyle = g.ink;
-    ctx.fillRect(x, y, w, h);
+  // Cover-fit draw of one photo into a rect, with zoom / pan / focus.
+  function drawPhoto(ctx, img, rect, t) {
+    var iw = img.naturalWidth || img.width;
+    var ih = img.naturalHeight || img.height;
+    if (!iw || !ih) return;
+    var scale = Math.max(rect.w / iw, rect.h / ih) * t.zoom;
+    var dw = iw * scale;
+    var dh = ih * scale;
+    // Focus shifts the crop window: 0 looks left/top, 100 looks right/bottom.
+    var fx = ((t.focus - 50) / 50) * Math.max(0, (dw - rect.w) / 2);
+    var fy = ((t.focus - 50) / 50) * Math.max(0, (dh - rect.h) / 2) * 0.5;
+    var cx = rect.x + rect.w / 2 + (t.panX / 100) * rect.w * 0.25 - fx;
+    var cy = rect.y + rect.h / 2 + (t.panY / 100) * rect.h * 0.25 - fy;
+    ctx.drawImage(img, cx - dw / 2, cy - dh / 2, dw, dh);
   }
-  gradeWash(ctx, w, h, g);
-  ctx.restore();
-  // inked band + frame
-  ctx.save();
-  ctx.strokeStyle = g.ink;
-  ctx.lineWidth = Math.max(3, W * 0.006);
-  ctx.strokeRect(x, y, w, h);
-  ctx.fillStyle = g.ink;
-  ctx.fillRect(x, y + h - Math.max(4, H * 0.008), w, Math.max(4, H * 0.008));
-  if (selected) {
-    ctx.strokeStyle = g.glow;
-    ctx.lineWidth = Math.max(3, W * 0.005);
-    ctx.setLineDash([14, 8]);
-    ctx.strokeRect(x + 4, y + 4, w - 8, h - 8);
+
+  function clipPanel(ctx, p, W, H) {
+    ctx.beginPath();
+    if (p.poly) {
+      for (var i = 0; i < p.poly.length; i++) {
+        var px = p.poly[i][0] * W;
+        var py = p.poly[i][1] * H;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+    } else {
+      ctx.rect(p.x * W, p.y * H, p.w * W, p.h * H);
+    }
+    ctx.clip();
   }
-  ctx.restore();
-  // role tag
-  if (p.tag) {
+
+  function spaced(ctx, text, x, y, spacing) {
+    var cx = x;
+    for (var i = 0; i < text.length; i++) {
+      ctx.fillText(text[i], cx, y);
+      cx += ctx.measureText(text[i]).width + spacing;
+    }
+    return cx;
+  }
+
+  function wrapText(ctx, text, maxW) {
+    var words = String(text).split(/\s+/);
+    var lines = [];
+    var line = '';
+    for (var i = 0; i < words.length; i++) {
+      var test = line ? line + ' ' + words[i] : words[i];
+      if (ctx.measureText(test).width > maxW && line) {
+        lines.push(line);
+        line = words[i];
+      } else {
+        line = test;
+      }
+    }
+    if (line) lines.push(line);
+    return lines;
+  }
+
+  function drawTitle(ctx, state, grade, W, H) {
+    var u = W / 1080; // scale unit
+    var title = (state.title || 'UNTITLED').toUpperCase();
+    var sub = (state.subtitle || '').toUpperCase();
+    var pad = 44 * u;
+    var titleSize = Math.round(W * 0.105);
+    var y = H - 150 * u;
+
+    // Subtitle above the title, letterspaced.
+    if (sub) {
+      ctx.font = Math.round(30 * u) + 'px "Bebas Neue", sans-serif';
+      ctx.fillStyle = grade.accent;
+      ctx.textBaseline = 'alphabetic';
+      spaced(ctx, sub, pad, y - titleSize - 18 * u, 10 * u);
+    }
+
+    if (state.titleStyle === 'slab') {
+      // Solid slab band behind white block type.
+      ctx.font = titleSize + 'px Anton, sans-serif';
+      var tw = ctx.measureText(title).width;
+      var bandH = titleSize * 1.18;
+      var bandY = y - titleSize - 8 * u;
+      ctx.fillStyle = grade.glow;
+      ctx.fillRect(pad - 14 * u, bandY, tw + 28 * u, bandH);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(title, pad, y);
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+      ctx.lineWidth = 2 * u;
+      ctx.strokeText(title, pad, y);
+    } else if (state.titleStyle === 'script') {
+      // Slanted script-style block type with a gold underline sweep.
+      ctx.save();
+      ctx.translate(pad, y);
+      ctx.transform(1, 0, -0.14, 1, 0, 0);
+      ctx.font = 'italic ' + titleSize + 'px Anton, sans-serif';
+      ctx.fillStyle = '#fff';
+      ctx.shadowColor = grade.glow;
+      ctx.shadowBlur = 26 * u;
+      ctx.fillText(title, 0, 0);
+      ctx.restore();
+      ctx.fillStyle = grade.accent;
+      ctx.fillRect(pad, y + 16 * u, Math.min(W * 0.5, ctx.measureText(title).width), 5 * u);
+    } else {
+      // Neon Reign: white block type, pink edge, cyan echo.
+      ctx.font = titleSize + 'px Anton, sans-serif';
+      ctx.fillStyle = 'rgba(34,230,255,0.85)';
+      ctx.fillText(title, pad + 6 * u, y + 6 * u);
+      ctx.strokeStyle = grade.glow;
+      ctx.lineWidth = 3 * u;
+      ctx.strokeText(title, pad, y);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(title, pad, y);
+    }
+
+    // Tagline under the title.
+    if (state.tagline) {
+      ctx.font = 'italic ' + Math.round(26 * u) + 'px Georgia, serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.92)';
+      var lines = wrapText(ctx, state.tagline, W - pad * 2);
+      var ty = y + 42 * u;
+      for (var i = 0; i < lines.length; i++) {
+        ctx.fillText(lines[i], pad, ty + i * 34 * u);
+      }
+    }
+  }
+
+  function drawCallout(ctx, state, grade, W, H) {
+    if (!state.showCallouts || !state.callout) return;
+    var u = W / 1080;
+    ctx.font = Math.round(26 * u) + 'px "Archivo Black", sans-serif';
+    var text = state.callout.toUpperCase();
+    var tw = ctx.measureText(text).width;
+    var bw = tw + 44 * u;
+    var bh = 64 * u;
+    var bx = W - bw - 36 * u;
+    var by = 36 * u;
+    ctx.fillStyle = 'rgba(10,4,24,0.92)';
+    ctx.strokeStyle = grade.accent;
+    ctx.lineWidth = 3 * u;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, bw, bh, 10 * u);
+    ctx.fill();
+    ctx.stroke();
+    // Tail.
+    ctx.beginPath();
+    ctx.moveTo(bx + 30 * u, by + bh);
+    ctx.lineTo(bx + 52 * u, by + bh + 22 * u);
+    ctx.lineTo(bx + 62 * u, by + bh);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(10,4,24,0.92)';
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, bx + 22 * u, by + bh / 2 + 1 * u);
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  function drawSeal(ctx, state, grade, W, H) {
+    if (!state.showSeal) return;
+    var u = W / 1080;
+    var cx = W - 92 * u;
+    var cy = H - 92 * u;
+    var r = 62 * u;
     ctx.save();
-    const fs = Math.max(11, Math.round(W * 0.018));
-    ctx.font = `${fs}px "Bebas Neue", sans-serif`;
-    const tw = ctx.measureText(p.tag).width + fs * 1.1;
-    const th = fs * 1.5;
-    ctx.fillStyle = g.ink;
-    ctx.fillRect(x + 10, y + 10, tw, th);
-    ctx.fillStyle = "#fff";
-    ctx.textBaseline = "middle";
-    ctx.fillText(p.tag, x + 10 + fs * 0.55, y + 10 + th / 2 + 1);
+    ctx.translate(cx, cy);
+    ctx.rotate(-0.18);
+    ctx.strokeStyle = grade.accent;
+    ctx.lineWidth = 3 * u;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, r - 9 * u, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = grade.accent;
+    ctx.font = Math.round(34 * u) + 'px Anton, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('VC', 0, 4 * u);
+    ctx.font = Math.round(15 * u) + 'px "Bebas Neue", sans-serif';
+    ctx.fillText('VICE CITY', 0, 26 * u);
+    ctx.fillText('EST. 2026', 0, -24 * u);
     ctx.restore();
+    ctx.textAlign = 'left';
   }
-  return { x, y, w, h };
-}
 
-function drawTitle(ctx, st, g, W, H, layout) {
-  const t = TITLES[st.titleStyle];
-  const bottom = layout !== "bleed";
-  const pad = W * 0.045;
-  let size = Math.round(W * 0.115);
-  ctx.save();
-  ctx.textBaseline = "alphabetic";
-  ctx.font = `${size}px "${t.font}", sans-serif`;
-  let tw = ctx.measureText(st.title).width;
-  const maxW = W - pad * 2;
-  if (tw > maxW) {
-    size = Math.round(size * maxW / tw);
-    ctx.font = `${size}px "${t.font}", sans-serif`;
-    tw = ctx.measureText(st.title).width;
+  function drawRoles(ctx, state, grade, W, H) {
+    if (!state.showRoles || !state.role) return;
+    var u = W / 1080;
+    var layout = layoutById(state.layout);
+    var p0 = layout.panels[0];
+    var x = (p0.x + 0.03) * W;
+    var y = (p0.y + 0.05) * H;
+    ctx.font = Math.round(24 * u) + 'px "Archivo Black", sans-serif';
+    var text = state.role.toUpperCase();
+    var tw = ctx.measureText(text).width;
+    ctx.fillStyle = grade.accent;
+    ctx.beginPath();
+    ctx.roundRect(x, y, tw + 30 * u, 44 * u, 6 * u);
+    ctx.fill();
+    ctx.fillStyle = '#14061f';
+    ctx.fillText(text, x + 15 * u, y + 31 * u);
   }
-  const ty = bottom ? H - pad * 2.0 : H * 0.24;
-  // gradient letters
-  const gr = ctx.createLinearGradient(0, ty - size, 0, ty + size * 0.15);
-  gr.addColorStop(0, "#ffffff");
-  gr.addColorStop(0.55, g.glow);
-  gr.addColorStop(1, g.mid);
-  ctx.lineWidth = Math.max(3, size * 0.07);
-  ctx.strokeStyle = g.ink;
-  ctx.lineJoin = "round";
-  ctx.strokeText(st.title, pad, ty);
-  ctx.fillStyle = gr;
-  ctx.fillText(st.title, pad, ty);
-  // subtitle
-  const sub = st.subtitle.toUpperCase();
-  const fs = Math.max(12, Math.round(W * 0.026));
-  ctx.font = `${fs}px "${t.sub}", sans-serif`;
-  const sy = bottom ? ty + fs * 1.55 : ty + fs * 2.1;
-  ctx.fillStyle = "#fff";
-  ctx.fillText(sub, pad, sy);
-  ctx.fillStyle = g.glow;
-  ctx.fillRect(pad, sy + fs * 0.7, Math.min(tw, W * 0.4), Math.max(3, fs * 0.16));
-  ctx.restore();
-}
 
-function drawSeal(ctx, st, g, W, H) {
-  if (!st.seal.on) return;
-  const r = Math.max(34, W * 0.055);
-  const cx = st.seal.pos === "br" ? W - r - W * 0.03 : W * 0.03 + r;
-  const cy = H - r - H * 0.03;
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.fillStyle = g.ink;
-  ctx.beginPath();
-  ctx.arc(0, 0, r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = g.glow;
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.arc(0, 0, r - 5, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.fillStyle = g.glow;
-  ctx.font = `bold ${Math.round(r * 0.42)}px sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("★", 0, -r * 0.12);
-  ctx.font = `${Math.round(r * 0.2)}px "Bebas Neue", sans-serif`;
-  ctx.fillStyle = "#fff";
-  ctx.fillText("VICE CITY", 0, r * 0.38);
-  ctx.restore();
-}
+  function drawBilling(ctx, state, grade, W, H) {
+    if (!state.showBilling) return;
+    var u = W / 1080;
+    var line = 'A NEON REIGN PRODUCTION  •  STARRING THE DRIVER  •  THE FIXER  •  THE LOOKOUT  •  VICE CITY 2026';
+    ctx.font = Math.round(17 * u) + 'px "Bebas Neue", sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.textAlign = 'center';
+    ctx.fillText(line, W / 2, H - 14 * u);
+    ctx.textAlign = 'left';
+  }
 
-export async function drawCover(canvas, st, selected = -1) {
-  const ctx = canvas.getContext("2d");
-  const W = canvas.width, H = canvas.height;
-  const g = GRADES[st.grade];
-  const layout = LAYOUTS[st.layout];
-  ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = g.ink;
-  ctx.fillRect(0, 0, W, H);
-  const rects = layout.panels;
-  const imgs = [];
-  for (let i = 0; i < rects.length; i++) {
-    const p = st.panels[i % st.panels.length];
-    let im = null;
-    try {
-      im = p._img || (await loadPhoto(p.photo));
-      p._img = im;
-    } catch (e) { im = null; }
-    imgs.push(im);
-  }
-  const gap = Math.max(3, Math.round(W * 0.006));
-  for (let i = 0; i < rects.length; i++) {
-    const [fx0, fy0, fw, fh] = rects[i];
-    const inset = [fx0 + gap / W, fy0 + gap / H, fw - 2 * gap / W, fh - 2 * gap / H];
-    drawPanel(ctx, imgs[i], inset, st.panels[i % st.panels.length], g, W, H, i === selected);
-  }
-  // title band
-  if (st.layout !== "bleed") {
+  function drawCover(ctx, state, W, H) {
+    var grade = gradeById(state.grade);
+    var layout = layoutById(state.layout);
     ctx.save();
-    const bandH = H * 0.2;
-    const gr = ctx.createLinearGradient(0, H - bandH, 0, H);
-    gr.addColorStop(0, "rgba(10,4,18,0)");
-    gr.addColorStop(1, "rgba(10,4,18,0.82)");
-    ctx.fillStyle = gr;
-    ctx.fillRect(0, H - bandH, W, bandH);
-    ctx.restore();
-  }
-  drawTitle(ctx, st, g, W, H, st.layout);
-  // callouts
-  ctx.save();
-  ctx.font = `${Math.max(12, Math.round(W * 0.024))}px "Bebas Neue", sans-serif`;
-  ctx.fillStyle = "#fff";
-  ctx.textBaseline = "top";
-  for (const c of st.callouts) {
-    ctx.fillText(c.text, c.x * W, c.y * H);
-  }
-  ctx.restore();
-  drawSeal(ctx, st, g, W, H);
-  // billing
-  if (st.billing.on && st.billing.text) {
-    ctx.save();
-    ctx.font = `${Math.max(9, Math.round(W * 0.011))}px sans-serif`;
-    ctx.fillStyle = "rgba(255,255,255,0.75)";
-    ctx.textAlign = "center";
-    ctx.fillText(st.billing.text, W / 2, H - Math.max(10, H * 0.012));
-    ctx.restore();
-  }
-  // vignette + grain
-  if (st.vignette) {
-    ctx.save();
-    const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.42, W / 2, H / 2, Math.max(W, H) * 0.72);
-    vg.addColorStop(0, "rgba(0,0,0,0)");
-    vg.addColorStop(1, "rgba(0,0,0,0.42)");
-    ctx.fillStyle = vg;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = grade.deep;
     ctx.fillRect(0, 0, W, H);
-    ctx.restore();
-  }
-  if (st.grain) {
-    ctx.save();
-    ctx.globalAlpha = 0.07;
-    const pat = ctx.createPattern(noiseTile(), "repeat");
-    ctx.fillStyle = pat;
-    ctx.fillRect(0, 0, W, H);
-    ctx.restore();
-  }
-}
 
-export function exportPNG(st, w, h) {
-  const c = document.createElement("canvas");
-  c.width = w;
-  c.height = h;
-  return drawCover(c, st).then(() => new Promise((res) => c.toBlob(res, "image/png")));
-}
+    var photos = state.photos || [];
+    for (var i = 0; i < layout.panels.length; i++) {
+      var p = layout.panels[i];
+      var t = state.panels[i] || { photo: 0, zoom: 1, panX: 0, panY: 0, focus: 50 };
+      var rect = { x: p.x * W, y: p.y * H, w: p.w * W, h: p.h * H };
+      ctx.save();
+      clipPanel(ctx, p, W, H);
+      var photo = photos[t.photo % Math.max(1, photos.length)];
+      if (photo && photo.img) {
+        drawPhoto(ctx, photo.img, rect, t);
+      } else {
+        // Empty panel: grade-coloured placeholder so the poster never breaks.
+        var g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
+        g.addColorStop(0, grade.wash[0]);
+        g.addColorStop(1, grade.deep);
+        ctx.fillStyle = g;
+        ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+      }
+      // Grade tint over the photo.
+      ctx.fillStyle = grade.tint;
+      ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+      ctx.restore();
+      // Panel seam.
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = Math.max(2, W / 540);
+      ctx.beginPath();
+      if (p.poly) {
+        for (var k = 0; k < p.poly.length; k++) {
+          var px = p.poly[k][0] * W;
+          var py = p.poly[k][1] * H;
+          if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+      } else {
+        ctx.rect(rect.x, rect.y, rect.w, rect.h);
+      }
+      ctx.stroke();
+    }
+
+    // Full-canvas grade wash + vignette.
+    var wash = ctx.createLinearGradient(0, 0, 0, H);
+    wash.addColorStop(0, grade.wash[0]);
+    wash.addColorStop(0.55, grade.wash[1]);
+    wash.addColorStop(1, grade.wash[2]);
+    ctx.fillStyle = wash;
+    ctx.fillRect(0, 0, W, H);
+    var vig = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.42, W / 2, H / 2, Math.max(W, H) * 0.75);
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, 'rgba(0,0,0,0.38)');
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, W, H);
+
+    drawRoles(ctx, state, grade, W, H);
+    drawCallout(ctx, state, grade, W, H);
+    drawTitle(ctx, state, grade, W, H);
+    drawSeal(ctx, state, grade, W, H);
+    drawBilling(ctx, state, grade, W, H);
+    ctx.restore();
+  }
+
+  function renderCover(canvas, state, W, H) {
+    canvas.width = W;
+    canvas.height = H;
+    var ctx = canvas.getContext('2d');
+    drawCover(ctx, state, W, H);
+    return canvas;
+  }
+
+  global.ViceCover = {
+    GRADES: GRADES,
+    LAYOUTS: LAYOUTS,
+    TITLE_STYLES: TITLE_STYLES,
+    SIZES: SIZES,
+    defaultState: defaultState,
+    drawCover: drawCover,
+    renderCover: renderCover,
+    gradeById: gradeById,
+    layoutById: layoutById,
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
