@@ -1,286 +1,227 @@
-/* Vice Cover Studio — app wiring: state, controls, photos, export. */
-(function () {
-  "use strict";
+// Vice Cover Studio v2 — editor wiring.
+// Live preview, per-panel photo upload + crop/position, layout and grade
+// pickers, text fields, export sizes and PNG export. Photos stay local.
 
-  var SAMPLES = {
-    boulevard: "samples/boulevard.jpg",
-    neon: "samples/neon.jpg",
-    pier: "samples/pier.jpg"
-  };
-  var SAMPLE_LABELS = { boulevard: "Boulevard", neon: "Neon", pier: "Pier" };
+import { defaultState, drawCover, GRADES, LAYOUTS, SIZES, layoutPanels } from "./cover.js";
 
-  var state = window.ViceCover.defaultState();
-  var photos = {};          /* key -> loaded Image */
-  var uploaded = {};        /* key -> uploaded Image (user files) */
-  var uploadCount = 0;
-  var selectedPanel = 0;
-  var raf = 0;
+const state = defaultState();
+let selectedPanel = 0;
 
-  function $(id) { return document.getElementById(id); }
+const preview = document.getElementById("preview");
+if (preview) {
+const pctx = preview.getContext("2d");
+const statusEl = document.getElementById("status");
 
-  function loadImage(src) {
-    return new Promise(function (resolve, reject) {
-      var img = new Image();
-      img.onload = function () { resolve(img); };
-      img.onerror = function () { reject(new Error("cannot load " + src)); };
-      img.src = src;
-    });
+function currentSize() {
+  return SIZES.find((s) => s.id === state.size) || SIZES[0];
+}
+
+function drawPreview() {
+  const size = currentSize();
+  const scale = Math.min(560 / size.w, 640 / size.h);
+  preview.width = Math.round(size.w * scale);
+  preview.height = Math.round(size.h * scale);
+  pctx.save();
+  pctx.scale(preview.width / size.w, preview.height / size.h);
+  drawCover(pctx, size.w, size.h, state);
+  pctx.restore();
+  const rects = layoutPanels(state.layout, preview.width, preview.height);
+  if (rects[selectedPanel]) {
+    const r = rects[selectedPanel];
+    pctx.save();
+    pctx.strokeStyle = "#ffd166";
+    pctx.lineWidth = 3;
+    pctx.setLineDash([8, 5]);
+    pctx.strokeRect(r.x, r.y, r.w, r.h);
+    pctx.restore();
   }
+}
 
-  function scheduleDraw() {
-    if (raf) return;
-    raf = requestAnimationFrame(function () {
-      raf = 0;
-      draw();
-    });
+function setStatus(msg) {
+  statusEl.textContent = msg;
+}
+
+function loadImage(src) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+async function loadSamples() {
+  for (const panel of state.panels) {
+    panel.img = await loadImage(panel.src);
   }
+  setStatus("Sample cast loaded — 7 portraits, 7 roles. Pick a panel, upload your own photo, then export.");
+  drawPreview();
+}
 
-  function draw() {
-    var canvas = $("cover");
-    if (!canvas) return;
-    window.ViceCover.renderCover(canvas, state, photos);
-    var size = canvas.width + " \u00d7 " + canvas.height;
-    var label = $("sizeLabel");
-    if (label) label.textContent = "Preview " + size + " \u00b7 drag the sliders to frame each panel";
-  }
-
-  function setActive(rowId, attr, value) {
-    var row = $(rowId);
-    if (!row) return;
-    Array.prototype.forEach.call(row.querySelectorAll("[data-" + attr + "]"), function (btn) {
-      btn.classList.toggle("active", btn.getAttribute("data-" + attr) === value);
-    });
-  }
-
-  function refreshPanelControls() {
-    var layout = window.ViceCover.LAYOUTS[state.layout];
-    var sel = $("panelSelect");
-    var current = sel.value;
-    sel.innerHTML = "";
-    layout.panels.forEach(function (_frac, i) {
-      var opt = document.createElement("option");
-      opt.value = String(i);
-      opt.textContent = "Panel " + (i + 1);
-      sel.appendChild(opt);
-    });
-    if (Number(current) < layout.panels.length) sel.value = current;
-    selectedPanel = Number(sel.value || 0);
-    var setting = state.panels[selectedPanel];
-    $("panX").value = String(setting.panX);
-    $("panY").value = String(setting.panY);
-    $("zoom").value = String(Math.round(setting.zoom * 100));
-    refreshPhotoSelect();
-  }
-
-  function refreshPhotoSelect() {
-    var sel = $("panelPhoto");
-    var setting = state.panels[selectedPanel];
-    sel.innerHTML = "";
-    Object.keys(SAMPLES).forEach(function (key) {
-      var opt = document.createElement("option");
-      opt.value = key;
-      opt.textContent = SAMPLE_LABELS[key];
-      sel.appendChild(opt);
-    });
-    Object.keys(uploaded).forEach(function (key) {
-      var opt = document.createElement("option");
-      opt.value = key;
-      opt.textContent = "Uploaded " + key.slice(3);
-      sel.appendChild(opt);
-    });
-    sel.value = setting.photo;
-  }
-
-  function bindChips(rowId, attr, apply) {
-    var row = $(rowId);
-    row.addEventListener("click", function (ev) {
-      var btn = ev.target.closest("[data-" + attr + "]");
-      if (!btn) return;
-      apply(btn.getAttribute("data-" + attr));
-      setActive(rowId, attr, btn.getAttribute("data-" + attr));
-      scheduleDraw();
-    });
-  }
-
-  function bind() {
-    bindChips("photoRow", "photo", function (key) {
-      state.panels[selectedPanel].photo = key;
-      refreshPhotoSelect();
-    });
-    bindChips("layoutRow", "layout", function (key) {
-      state.layout = key;
-      refreshPanelControls();
-    });
-    bindChips("gradeRow", "grade", function (key) { state.grade = key; });
-    bindChips("titleRow", "tstyle", function (key) { state.titleStyle = key; });
-
-    $("titleInput").addEventListener("input", function (ev) {
-      state.title = ev.target.value;
-      scheduleDraw();
-    });
-    $("subtitleInput").addEventListener("input", function (ev) {
-      state.subtitle = ev.target.value;
-      scheduleDraw();
-    });
-    $("panelSelect").addEventListener("change", function (ev) {
-      selectedPanel = Number(ev.target.value);
-      var setting = state.panels[selectedPanel];
-      $("panX").value = String(setting.panX);
-      $("panY").value = String(setting.panY);
-      $("zoom").value = String(Math.round(setting.zoom * 100));
-      refreshPhotoSelect();
-    });
-    $("panelPhoto").addEventListener("change", function (ev) {
-      state.panels[selectedPanel].photo = ev.target.value;
-      scheduleDraw();
-    });
-    $("panX").addEventListener("input", function (ev) {
-      state.panels[selectedPanel].panX = Number(ev.target.value);
-      scheduleDraw();
-    });
-    $("panY").addEventListener("input", function (ev) {
-      state.panels[selectedPanel].panY = Number(ev.target.value);
-      scheduleDraw();
-    });
-    $("zoom").addEventListener("input", function (ev) {
-      state.panels[selectedPanel].zoom = Number(ev.target.value) / 100;
-      scheduleDraw();
-    });
-    $("calloutToggle").addEventListener("change", function (ev) {
-      state.callouts = ev.target.checked;
-      scheduleDraw();
-    });
-    $("callout1").addEventListener("input", function (ev) {
-      state.callout1 = ev.target.value;
-      scheduleDraw();
-    });
-    $("callout2").addEventListener("input", function (ev) {
-      state.callout2 = ev.target.value;
-      scheduleDraw();
-    });
-    $("sealToggle").addEventListener("change", function (ev) {
-      state.seal = ev.target.checked;
-      scheduleDraw();
-    });
-    $("tagsToggle").addEventListener("change", function (ev) {
-      state.tags = ev.target.checked;
-      scheduleDraw();
-    });
-    $("billingToggle").addEventListener("change", function (ev) {
-      state.billing = ev.target.checked;
-      scheduleDraw();
-    });
-
-    $("upload").addEventListener("change", function (ev) {
-      var files = Array.prototype.slice.call(ev.target.files || []);
-      if (!files.length) return;
-      var pending = files.length;
-      files.forEach(function (file) {
-        var reader = new FileReader();
-        reader.onload = function () {
-          uploadCount += 1;
-          var key = "up" + uploadCount;
-          loadImage(reader.result).then(function (img) {
-            uploaded[key] = img;
-            photos[key] = img;
-            state.panels[selectedPanel].photo = key;
-            $("photoName").textContent = files.length + " photo(s) loaded: " + file.name;
-            refreshPhotoSelect();
-            scheduleDraw();
-          }).catch(function () { /* ignore a bad file */ });
-          pending -= 1;
-        };
-        reader.readAsDataURL(file);
-      });
-      ev.target.value = "";
-    });
-
-    document.querySelectorAll("[data-export]").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        var key = btn.getAttribute("data-export");
-        var canvas = window.ViceCover.renderExport(state, photos, key);
-        canvas.toBlob(function (blob) {
-          if (!blob) return;
-          var size = window.ViceCover.EXPORT_SIZES[key];
-          var a = document.createElement("a");
-          a.href = URL.createObjectURL(blob);
-          a.download = "vice-cover-" + key + "-" + size[0] + "x" + size[1] + ".png";
-          document.body.appendChild(a);
-          a.click();
-          setTimeout(function () {
-            URL.revokeObjectURL(a.href);
-            a.remove();
-          }, 500);
-        }, "image/png");
-      });
-    });
-  }
-
-  /* Screenshot helper: render the current state at an export size and
-     return a PNG data URL, so the maker can capture exact exports. */
-  function shotPng(sizeKey) {
-    var canvas = window.ViceCover.renderExport(state, photos, sizeKey);
-    return canvas.toDataURL("image/png");
-  }
-
-  function applyShot(preset) {
-    if (preset.layout) state.layout = preset.layout;
-    if (preset.grade) state.grade = preset.grade;
-    if (preset.titleStyle) state.titleStyle = preset.titleStyle;
-    if (preset.title) state.title = preset.title;
-    if (preset.subtitle) state.subtitle = preset.subtitle;
-    if (preset.panels) {
-      preset.panels.forEach(function (p, i) {
-        if (state.panels[i]) {
-          if (p.photo) state.panels[i].photo = p.photo;
-          if (typeof p.panX === "number") state.panels[i].panX = p.panX;
-          if (typeof p.panY === "number") state.panels[i].panY = p.panY;
-          if (typeof p.zoom === "number") state.panels[i].zoom = p.zoom;
-          if (p.tag) state.panels[i].tag = p.tag;
-        }
-      });
-    }
-    if (typeof preset.callouts === "boolean") state.callouts = preset.callouts;
-    if (typeof preset.seal === "boolean") state.seal = preset.seal;
-    if (typeof preset.tags === "boolean") state.tags = preset.tags;
-    if (typeof preset.billing === "boolean") state.billing = preset.billing;
-    setActive("layoutRow", "layout", state.layout);
-    setActive("gradeRow", "grade", state.grade);
-    setActive("titleRow", "tstyle", state.titleStyle);
-    refreshPanelControls();
-    draw();
-  }
-
-  function ready() {
-    var keys = Object.keys(SAMPLES);
-    var jobs = keys.map(function (key) {
-      return loadImage(SAMPLES[key]).then(function (img) { photos[key] = img; });
-    });
-    return Promise.all(jobs).then(function () {
-      bind();
-      refreshPanelControls();
-      if (document.fonts && document.fonts.ready) {
-        return document.fonts.ready.then(draw);
+function buildPanelSlots() {
+  const wrap = document.getElementById("panelSlots");
+  wrap.innerHTML = "";
+  state.panels.forEach((panel, i) => {
+    const slot = document.createElement("div");
+    slot.className = "slot" + (i === selectedPanel ? " selected" : "");
+    slot.innerHTML =
+      `<button type="button" class="slot-pick" data-i="${i}">Panel ${i + 1} · ${panel.role}</button>` +
+      `<input type="text" class="role-input" data-i="${i}" value="${panel.role}" aria-label="Role tag panel ${i + 1}">` +
+      `<label class="upload">Upload photo<input type="file" accept="image/*" data-i="${i}"></label>`;
+    wrap.appendChild(slot);
+  });
+  wrap.querySelectorAll(".slot-pick").forEach((b) =>
+    b.addEventListener("click", () => { selectedPanel = Number(b.dataset.i); syncPanelControls(); buildPanelSlots(); drawPreview(); }));
+  wrap.querySelectorAll(".role-input").forEach((inp) =>
+    inp.addEventListener("input", () => {
+      state.panels[Number(inp.dataset.i)].role = inp.value.toUpperCase();
+      drawPreview();
+    }));
+  wrap.querySelectorAll('input[type="file"]').forEach((inp) =>
+    inp.addEventListener("change", async () => {
+      const file = inp.files && inp.files[0];
+      if (!file) return;
+      const url = URL.createObjectURL(file);
+      const img = await loadImage(url);
+      if (img) {
+        const p = state.panels[Number(inp.dataset.i)];
+        p.img = img; p.src = url; p.zoom = 1; p.ox = 0; p.oy = 0;
+        selectedPanel = Number(inp.dataset.i);
+        syncPanelControls();
+        drawPreview();
+        setStatus(`Photo loaded into panel ${selectedPanel + 1} — crop it with the sliders, then export.`);
       }
-      draw();
-    }).catch(function () {
-      bind();
-      refreshPanelControls();
-      draw();
+    }));
+}
+
+function buildPickers() {
+  const layoutWrap = document.getElementById("layoutPicker");
+  LAYOUTS.forEach((l) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = l.name;
+    b.dataset.id = l.id;
+    b.addEventListener("click", () => {
+      state.layout = l.id;
+      layoutWrap.querySelectorAll("button").forEach((x) => x.classList.toggle("active", x === b));
+      drawPreview();
     });
-  }
+    if (l.id === state.layout) b.classList.add("active");
+    layoutWrap.appendChild(b);
+  });
+  const gradeWrap = document.getElementById("gradePicker");
+  GRADES.forEach((g) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = g.name;
+    b.dataset.id = g.id;
+    b.style.background = `linear-gradient(135deg, ${g.top}, ${g.mid}, ${g.bot})`;
+    b.addEventListener("click", () => {
+      state.grade = g.id;
+      gradeWrap.querySelectorAll("button").forEach((x) => x.classList.toggle("active", x === b));
+      drawPreview();
+    });
+    if (g.id === state.grade) b.classList.add("active");
+    gradeWrap.appendChild(b);
+  });
+  const sizeWrap = document.getElementById("sizePicker");
+  SIZES.forEach((s) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = s.name;
+    b.dataset.id = s.id;
+    b.addEventListener("click", () => {
+      state.size = s.id;
+      sizeWrap.querySelectorAll("button").forEach((x) => x.classList.toggle("active", x === b));
+      drawPreview();
+    });
+    if (s.id === state.size) b.classList.add("active");
+    sizeWrap.appendChild(b);
+  });
+}
 
-  window.__coverStudio = {
-    state: state,
-    photos: photos,
-    shotPng: shotPng,
-    applyShot: applyShot,
-    draw: draw
-  };
+function bindText(id, key) {
+  const el = document.getElementById(id);
+  el.value = state[key];
+  el.addEventListener("input", () => { state[key] = el.value; drawPreview(); });
+}
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", ready);
-  } else {
-    ready();
+function syncPanelControls() {
+  const p = state.panels[selectedPanel];
+  document.getElementById("zoomRange").value = p.zoom;
+  document.getElementById("posXRange").value = p.ox;
+  document.getElementById("posYRange").value = p.oy;
+  document.getElementById("panelLabel").textContent = `Panel ${selectedPanel + 1} — ${p.role}`;
+}
+
+function bindCrop() {
+  const zoom = document.getElementById("zoomRange");
+  const px = document.getElementById("posXRange");
+  const py = document.getElementById("posYRange");
+  zoom.addEventListener("input", () => { state.panels[selectedPanel].zoom = Number(zoom.value); drawPreview(); });
+  px.addEventListener("input", () => { state.panels[selectedPanel].ox = Number(px.value); drawPreview(); });
+  py.addEventListener("input", () => { state.panels[selectedPanel].oy = Number(py.value); drawPreview(); });
+  document.getElementById("fillAll").addEventListener("click", () => {
+    const src = state.panels[selectedPanel];
+    state.panels.forEach((p) => { p.img = src.img; p.src = src.src; });
+    drawPreview();
+    setStatus("One photo now fills every panel — pick a panel and upload a different photo to mix the cast.");
+  });
+  document.getElementById("useSamples").addEventListener("click", async () => {
+    const fresh = defaultState();
+    for (let i = 0; i < state.panels.length; i++) state.panels[i].src = fresh.panels[i].src;
+    await loadSamples();
+    setStatus("Sample cast reloaded — seven portraits, seven roles.");
+  });
+}
+
+async function exportPNG() {
+  const size = currentSize();
+  const off = document.createElement("canvas");
+  off.width = size.w;
+  off.height = size.h;
+  drawCover(off.getContext("2d"), size.w, size.h, state);
+  const blob = await new Promise((res) => off.toBlob(res, "image/png"));
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `vice-cover-${state.size}-${Date.now()}.png`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  setStatus(`Exported ${size.w} x ${size.h} PNG — share it anywhere.`);
+}
+
+// Click a panel in the preview to select it for crop and upload.
+preview.addEventListener("click", (ev) => {
+  const r = preview.getBoundingClientRect();
+  const x = (ev.clientX - r.left) * (preview.width / r.width);
+  const y = (ev.clientY - r.top) * (preview.height / r.height);
+  const rects = layoutPanels(state.layout, preview.width, preview.height);
+  const hit = rects.findIndex((rc) => x >= rc.x && x <= rc.x + rc.w && y >= rc.y && y <= rc.y + rc.h);
+  if (hit >= 0) {
+    selectedPanel = hit;
+    syncPanelControls();
+    buildPanelSlots();
+    drawPreview();
   }
-})();
+});
+
+bindText("titleInput", "title");
+bindText("subtitleInput", "subtitle");
+bindText("taglineInput", "tagline");
+bindText("quoteInput", "quote");
+bindText("publicationInput", "publication");
+buildPickers();
+buildPanelSlots();
+bindCrop();
+syncPanelControls();
+document.getElementById("exportBtn").addEventListener("click", exportPNG);
+
+// Load the local display + script fonts before the first draw so the
+// chrome title and neon subtitle render in the right lettering.
+Promise.all([
+  document.fonts.load('40px Anton'),
+  document.fonts.load('40px Pacifico'),
+  document.fonts.ready,
+]).then(loadSamples);
+loadSamples();
+}
